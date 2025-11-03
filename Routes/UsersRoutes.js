@@ -1,8 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const UserController = require("../Controller/UserController");
-const  authenticate = require('../middleware/authToken');
-const authorizeRoles = require('../Middleware/AuthorizeToken')
+
 
 // Only admin can get all users
 //router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
