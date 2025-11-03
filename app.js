@@ -1,18 +1,30 @@
 require('dotenv').config();
+const cors = require("cors");
 const express = require("express");
-
 // Created the app
 const app = express();
+//allow the front-end to access the back-end
+app.use(cors({
+  origin: "http://localhost:5173",  // your frontend URL
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  credentials: true
+}));
+
+
 app.use(express.json());
-const productsRouter = require('./Routes/productsRoute')
-const ordersRouter = require('./Routes/ordersRoutes')
+
 const usersRouter = require('./Routes/UsersRoutes')
-const CategoryRouter = require('./Routes/CategoryRoutes')
-//another route
-app.use("/api/products", productsRouter);
-app.use("/api/category", CategoryRouter);
-app.use("/api/orders", ordersRouter);
-app.use("/api/user", usersRouter);
+
+const AuthRoutes = require('./Routes/AuthRoutes')
+
+//define routes
+
+app.use("/user", usersRouter);
+app.use("/auth", AuthRoutes);
+
+
+
+
 //MongoDB connection
 const mongoose = require('mongoose');
 mongoose.connect(process.env.MONGO_URI)

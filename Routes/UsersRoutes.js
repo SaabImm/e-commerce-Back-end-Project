@@ -1,30 +1,34 @@
 const express = require("express");
 const router = express.Router();
-const UserController = require("../controllers/UserController");
-const { verifyToken, authorizeRoles } = require("../middleware/auth");
+const UserController = require("../Controller/UserController");
+const  authenticate = require('../middleware/authToken');
+const authorizeRoles = require('../Middleware/AuthorizeToken')
 
 // Only admin can get all users
-router.get('/', verifyToken, authorizeRoles('admin'), UserController.getAllUsers);
+//router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
+router.get('/', UserController.getAllUsers);
+
 
 // Get user by ID - authenticated
-router.get('/:id', verifyToken, UserController.getUserById);
+router.get('/:id', UserController.getUserById);
 
 // Only admin can get users by role
-router.get('/role=/:role', verifyToken, authorizeRoles('admin'), UserController.getAllByRole);
+router.get('/role=/:role', UserController.getAllByRole);
 
 // Create user - requires auth (admin)
-router.post('/', verifyToken, authorizeRoles('admin'), UserController.createUser);
+//router.post('/', UserController.createUser);
+router.post('/', UserController.createUser);
 
 // Only admin can delete all users
-router.delete('/', verifyToken, authorizeRoles('admin'), UserController.deleteAllUsers);
+router.delete('/', UserController.deleteAllUsers);
 
 // Delete a specific user - authenticated (admin or owner check in controller)
-router.delete('/:id', verifyToken, UserController.deleteUserById);
+router.delete('/:id', UserController.deleteUserById);
 
 // Update user - authenticated (admin or owner)
-router.patch('/:id', verifyToken, UserController.updateUser);
+router.patch('/:id', UserController.updateUser);
 
 // Reset user - authenticated (admin only)
-router.put('/:id', verifyToken, authorizeRoles('admin'), UserController.resetUser);
+router.put('/:id', UserController.resetUser);
 
 module.exports = router;

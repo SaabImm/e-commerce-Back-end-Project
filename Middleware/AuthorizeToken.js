@@ -1,4 +1,7 @@
-function authorizeRoles(...allowedRoles) {
+const jwt = require('jsonwebtoken');
+
+
+const authorizeRoles = (...allowedRoles)=> {
     return (req, res, next) => {
         if (!req.user) return res.status(401).json({ message: "User not authenticated" });
 
@@ -9,4 +12,4 @@ function authorizeRoles(...allowedRoles) {
     };
 }
 
-module.exports = authorizeRoles 
+module.exports = authorizeRoles;

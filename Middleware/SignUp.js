@@ -4,10 +4,10 @@ const jwt = require("jsonwebtoken");
 
 exports.signup = async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const { name, lastname, email, password, role } = req.body;
     
     // 1️⃣ Check required fields
-    if (!username || !email || !password) {
+    if (!name || !lastname || !email || !password) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -22,7 +22,8 @@ exports.signup = async (req, res) => {
 
     // 4️⃣ Create user
     const newUser = new User({
-      username,
+      name,
+      lastname,
       email,
       password: hashedPassword,
       role: role || "user"
@@ -31,19 +32,18 @@ exports.signup = async (req, res) => {
     const savedUser = await newUser.save();
 
     // 5️⃣ Generate JWT token
-    const token = jwt.sign(
-      { id: savedUser._id, role: savedUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    // const token = jwt.sign(
+    //   { id: savedUser._id, role: savedUser.role },
+    //   process.env.JWT_SECRET,
+    //   { expiresIn: "1h" }
+    // );
 
     // 6️⃣ Respond with token and user info
     res.status(201).json({
       message: "User created successfully!",
-      user: { id: savedUser._id, username: savedUser.username, email: savedUser.email, role: savedUser.role },
-      token
+      user: { id: savedUser._id, name: savedUser.name, lastname: savedUser.lastname, email: savedUser.email, role: savedUser.role }
     });
-
+ 
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server Error", error });
