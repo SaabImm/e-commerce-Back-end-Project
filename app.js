@@ -4,13 +4,15 @@ const express = require("express");
 // Created the app
 const app = express();
 //allow the front-end to access the back-end
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://back-end-signup-and-login.onrender.com",  // replace with your real Vercel domain
+];
+
 app.use(cors({
-  origin: "http://localhost:5173",  // your frontend URL
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  credentials: true
+  origin: allowedOrigins,
+  credentials: true,
 }));
-
-
 app.use(express.json());
 
 const usersRouter = require('./Routes/UsersRoutes')
