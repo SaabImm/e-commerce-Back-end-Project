@@ -5,6 +5,6 @@ const signUp= require('../Middleware/SignUp')
 const login= require('../Middleware/Login')
 
 router.post('/signup', signUp.signup);
-router.get('/login', login.login);
+router.post('/login', login.login);
 
 module.exports = router;

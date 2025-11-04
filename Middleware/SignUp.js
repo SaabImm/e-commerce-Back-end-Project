@@ -31,17 +31,18 @@ exports.signup = async (req, res) => {
 
     const savedUser = await newUser.save();
 
-    // 5️⃣ Generate JWT token
-    // const token = jwt.sign(
-    //   { id: savedUser._id, role: savedUser.role },
-    //   process.env.JWT_SECRET,
-    //   { expiresIn: "1h" }
-    // );
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: savedUser._id, role: savedUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
 
     // 6️⃣ Respond with token and user info
     res.status(201).json({
       message: "User created successfully!",
-      user: { id: savedUser._id, name: savedUser.name, lastname: savedUser.lastname, email: savedUser.email, role: savedUser.role }
+      user: { id: savedUser._id, name: savedUser.name, lastname: savedUser.lastname, email: savedUser.email, role: savedUser.role },
+      token
     });
  
   } catch (error) {

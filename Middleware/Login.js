@@ -1,3 +1,8 @@
+const User = require("../Models/UsersModels");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -29,7 +34,7 @@ exports.login = async (req, res) => {
     // 5️⃣ Respond with token
     res.status(200).json({
       message: "Login successful",
-      user: { id: user._id, username: user.username, email: user.email, role: user.role },
+      user: { id: user._id, name: user.name, lastname: user.lastname, email: user.email, role: user.role },
       token
     });
 
