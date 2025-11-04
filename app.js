@@ -6,7 +6,7 @@ const app = express();
 //allow the front-end to access the back-end
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://back-end-signup-and-login.onrender.com",  // replace with your real Vercel domain
+  "https://signup-login-ebon.vercel.app/",  // replace with your real Vercel domain
 ];
 
 app.use(cors({
