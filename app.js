@@ -6,7 +6,7 @@ const app = express();
 //allow the front-end to access the back-end
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://signup-login-ebon.vercel.app"
+  "https://signup-and-login-front-6zlbu8pa4-saabimms-projects.vercel.app/"
 ];
 
 app.use(cors({
