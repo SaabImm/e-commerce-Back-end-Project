@@ -6,12 +6,13 @@ const app = express();
 //allow the front-end to access the back-end
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://signup-login-ebon.vercel.app/",  // replace with your real Vercel domain
+  "https://signup-login-ebon.vercel.app"
 ];
 
 app.use(cors({
   origin: allowedOrigins,
-  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
 }));
 app.use(express.json());
 
