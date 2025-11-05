@@ -1,7 +1,7 @@
 const User = require("../Models/UsersModels");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const sendVerificationEmail = require("./sendEmail")
+const {sendVerificationEmail} = require("./sendEmail")
 
 exports.signup = async (req, res) => {
   try {
@@ -31,9 +31,8 @@ exports.signup = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
-      //generates verification Token
-    const verifyToken = jwt.sign({ id: savedUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
-    await sendVerificationEmail(email, savedUser._id);
+  
+    await sendVerificationEmail(savedUser.email, token);
 
 
 

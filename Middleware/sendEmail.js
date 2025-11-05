@@ -1,34 +1,23 @@
-import { Resend } from 'resend';
-import jwt from 'jsonwebtoken';
+import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export const sendVerificationEmail = async (userEmail, userId) => {
+export const sendVerificationEmail = async (email, token) => {
+  const verifyUrl = `https://your-frontend-domain.com/verify?token=${token}`;
+
   try {
-    // Generate a verification token
-    const token = jwt.sign(
-      { id: userId },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
-
-    // Create your verification URL
-    const verificationLink = `${process.env.VITE_API_URL}/verify/${token}`;
-
-    // Send the email via Resend API
     await resend.emails.send({
-      from: 'Your App <onboarding@resend.dev>', // you can later verify your own domain
-      to: userEmail,
-      subject: 'Verify your email address',
+      from: "Your App <onboarding@resend.dev>",
+      to: email,
+      subject: "Verify your email",
       html: `
-        <h2>Email Verification</h2>
-        <p>Click below to verify your account:</p>
-        <a href="${verificationLink}">Verify Email</a>
+        <h2>Welcome!</h2>
+        <p>Click <a href="${verifyUrl}">here</a> to verify your email.</p>
       `,
     });
-
-    console.log('✅ Verification email sent via Resend');
+    console.log("✅ Verification email sent to:", email);
   } catch (error) {
-    console.error('❌ Error sending email:', error);
+    console.error("❌ Error sending email:", error);
+    throw error;
   }
 };
