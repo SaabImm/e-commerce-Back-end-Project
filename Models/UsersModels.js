@@ -16,7 +16,8 @@ const usersSchema = new mongoose.Schema({
     required: true,
     default: 'user'
   },
-  isActive: {type: Boolean, default: false}
+  isActive: {type: Boolean, default: false},
+  isVerified: {type: Boolean, default: false}
 },
  { timestamps: true });
 

@@ -4,9 +4,10 @@ const express = require("express");
 // Created the app
 const app = express();
 //allow the front-end to access the back-end
+const VITEURL = process.env.VITE_API_URL;
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://signup-and-login-omega.vercel.app"
+  VITEURL
 ];
 
 app.use(cors({

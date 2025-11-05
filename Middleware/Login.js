@@ -13,7 +13,7 @@ exports.login = async (req, res) => {
     }
 
     // 2️⃣ Find user
-    const user = await User.findOne({ email }).select("+password"); // password is select:false in schema
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
