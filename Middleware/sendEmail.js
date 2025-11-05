@@ -7,7 +7,7 @@ export const sendVerificationEmail = async (email, token) => {
 
   try {
     await resend.emails.send({
-      from: "Your App <onboarding@resend.dev>",
+      from: process.env.EMAIL_USER,
       to: email,
       subject: "Verify your email",
       html: `
@@ -18,6 +18,5 @@ export const sendVerificationEmail = async (email, token) => {
     console.log("✅ Verification email sent to:", email);
   } catch (error) {
     console.error("❌ Error sending email:", error);
-    throw error;
   }
 };
