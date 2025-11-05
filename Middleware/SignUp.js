@@ -5,7 +5,7 @@ const {sendVerificationEmail} = require("./sendEmail")
 
 exports.signup = async (req, res) => {
   try {
-    const { name, lastname, email, password, role } = req.body;
+    const { name, lastname, email, password } = req.body;
     
     // 1️⃣ Check required fields
     if (!name || !lastname || !email || !password) {
@@ -32,7 +32,12 @@ exports.signup = async (req, res) => {
 
     const savedUser = await newUser.save();
       //generates verification Token
-    await sendVerificationEmail(user.email, token);
+         const token = jwt.sign(
+            { id: user._id, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: "1h" }
+          );
+    await sendVerificationEmail(savedUser.email, token);
 
 
 

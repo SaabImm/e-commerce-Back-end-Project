@@ -3,7 +3,7 @@ import { Resend } from "resend";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendVerificationEmail = async (email, token) => {
-  const verifyUrl = `https://your-frontend-domain.com/verify?token=${token}`;
+  const verifyUrl = `${prppcess.env.VITE_API_URL}/verify?token=${token}`;
 
   try {
     await resend.emails.send({
