@@ -33,7 +33,7 @@ exports.signup = async (req, res) => {
     const savedUser = await newUser.save();
       //generates verification Token
          const token = jwt.sign(
-            { id: user._id, role: user.role },
+            { id: savedUser._id, role: savedUser.role },
             process.env.JWT_SECRET,
             { expiresIn: "1h" }
           );
