@@ -31,8 +31,8 @@ exports.signup = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
-  
-    await sendVerificationEmail(savedUser.email, token);
+      //generates verification Token
+    await sendVerificationEmail(user.email, token);
 
 
 
