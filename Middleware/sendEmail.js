@@ -13,7 +13,7 @@ export const sendVerificationEmail = async (userEmail, userId) => {
     );
 
     // Create your verification URL
-    const verificationLink = `${process.env.BASE_URL}/verify/${token}`;
+    const verificationLink = `${process.env.VITE_API_URL}/verify/${token}`;
 
     // Send the email via Resend API
     await resend.emails.send({
