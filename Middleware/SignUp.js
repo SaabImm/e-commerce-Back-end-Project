@@ -33,17 +33,9 @@ exports.signup = async (req, res) => {
     const savedUser = await newUser.save();
       //generates verification Token
     const verifyToken = jwt.sign({ id: savedUser._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    await sendVerificationEmail(email, savedUser._id);
 
-    //creates the URL for verification
-    const verifyUrl = `${process.env.VITE_API_URL}/verify/${verifyToken}`;
 
-    //send the email with the clickable url
-    await sendEmail(
-      newUser.email,
-      "Verify your email",
-      `<h2>Click to verify your account:</h2>
-       <a href="${verifyUrl}">Verify Email</a>`
-    );
 
     // 6️⃣ Respond with token and user info
     res.status(201).json({
