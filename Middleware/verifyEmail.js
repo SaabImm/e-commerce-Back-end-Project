@@ -5,7 +5,7 @@ const User = require("../Models/UsersModels");
 exports.verifyEmail = async (req, res) => {
   try {
     //grabs the token from the clicked URL 
-    const {token} = req.query.token;
+    const token = req.query.token;
     console.log("this is the token",token)
 
     //verifies its integrity
