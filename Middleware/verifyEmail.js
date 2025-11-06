@@ -5,8 +5,8 @@ const User = require("../Models/UsersModels");
 exports.verifyEmail = async (req, res) => {
   try {
     //grabs the token from the clicked URL 
-    const {token} = req.params;
-
+    const {token} = req.query.token;
+    console.log("this is the token",token)
 
     //verifies its integrity
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

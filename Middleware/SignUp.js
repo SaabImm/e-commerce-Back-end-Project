@@ -31,15 +31,15 @@ exports.signup = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
+     console.log("new User Created!")
       //generates verification Token
          const token = jwt.sign(
             { id: savedUser._id, role: savedUser.role },
             process.env.JWT_SECRET,
             { expiresIn: "1h" }
           );
+
     await sendVerificationEmail(savedUser.email, token);
-
-
 
     // 6️⃣ Respond with token and user info
     res.status(201).json({

@@ -1,13 +1,14 @@
-require('dotenv').config();
+require('dotenv').config({
+  path: `.env.${process.env.NODE_ENV || "development"}`
+});
 const cors = require("cors");
 const express = require("express");
 // Created the app
 const app = express();
 //allow the front-end to access the back-end
-const VITEURL = process.env.VITE_API_URL;
+
 const allowedOrigins = [
-  "http://localhost:5173",
-  VITEURL
+  process.env.CLIENT_URL
 ];
 
 app.use(cors({
@@ -31,7 +32,7 @@ app.use("/auth", AuthRoutes);
 
 //MongoDB connection
 const mongoose = require('mongoose');
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URL)
 .then(() => console.log('✅ Connected to MongoDB with Mongoose'))
 .catch(err => console.error('❌ Connection failed:', err));
 
