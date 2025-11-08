@@ -14,6 +14,7 @@ const sendVerificationEmail = async (email, token) => {
         <h2>Welcome!</h2>
         <p>Please click this link <a href="${verifyUrl}">here</a> to verify your email.</p>
       `,
+      click_tracking: false
     });
 
     console.log("✅ Verification email sent to:", email);
