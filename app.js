@@ -7,15 +7,27 @@ const express = require("express");
 const app = express();
 //allow the front-end to access the back-end
 
-const allowedOrigins = [
-  process.env.CLIENT_URL
-];
 
 app.use(cors({
-  origin: allowedOrigins,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+
+    const allowed = [
+      process.env.CLIENT_URL,
+      "http://localhost:5173"
+    ];
+
+    if (allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS blocked: " + origin));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"]
 }));
+
+
 app.use(express.json());
 
 const usersRouter = require('./Routes/UsersRoutes')
