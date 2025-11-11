@@ -17,9 +17,10 @@ const sendVerificationEmail = async (email, token) => {
       click_tracking: false
     });
 
-    console.log("✅ Verification email sent to:", email);
+
 
   } catch (error) {
+    res.status(500).json({ message: "Error sending email" });
     console.error("❌ Error sending email:", error);
   }
 };

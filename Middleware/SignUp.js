@@ -9,9 +9,15 @@ exports.signup = async (req, res) => {
     
     // 1️⃣ Check required fields
     if (!name || !lastname || !email || !password) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
+    //check if the email is valid
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Please enter a valid email address" });
+    }
     // 2️⃣ Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -31,7 +37,6 @@ exports.signup = async (req, res) => {
     });
 
     const savedUser = await newUser.save();
-     console.log("new User Created!")
       //generates verification Token
          const token = jwt.sign(
             { id: savedUser._id, role: savedUser.role },

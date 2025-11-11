@@ -37,7 +37,7 @@ exports.createUser = async (req, res) => {
   try {
     const {username, email, password} = req.body
     if (!username || !email || !password ) {
-    return  res.status(400).json({ error: "Missing required fields" });
+    return  res.status(400).json({ message: "Missing required fields" });
 }
     //verify duplicates
     const foundEmail = await User.findOne({email: email})
