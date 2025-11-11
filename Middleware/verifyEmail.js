@@ -6,7 +6,6 @@ exports.verifyEmail = async (req, res) => {
   try {
     //grabs the token from the clicked URL 
     const token = req.query.token;
-    console.log("this is the token",token)
 
     //verifies its integrity
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -16,6 +15,8 @@ exports.verifyEmail = async (req, res) => {
 
     //checks if it's already verified
     if (user.isVerified) {return res.status(400).json({ message: "Email already verified" });}
+    
+    
     user.isVerified = true;
     user.isActive= true;
     await user.save();

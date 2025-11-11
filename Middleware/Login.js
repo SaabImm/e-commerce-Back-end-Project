@@ -6,7 +6,6 @@ const jwt = require("jsonwebtoken");
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     // 1️⃣ Check required fields
     if (!email || !password) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -24,6 +23,14 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    //is the user verified
+    if(!user.isVerified){
+      return res.status(403).json({message: "Your email is not Verified!!"})
+    }
+
+    //activate the user session
+    user.isActive= true;
+    await user.save();
     // 4️⃣ Generate JWT token
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -34,7 +41,15 @@ exports.login = async (req, res) => {
     // 5️⃣ Respond with token
     res.status(200).json({
       message: "Login successful",
-      user: { id: user._id, name: user.name, lastname: user.lastname, email: user.email, role: user.role },
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        lastname: user.lastname, 
+        email: user.email, 
+        role: user.role, 
+        isActive: user.isActive, 
+        isVerified: user.isVerified 
+      },
       token
     });
 
