@@ -6,7 +6,7 @@ exports.verifyEmail = async (req, res) => {
   try {
     //grabs the token from the clicked URL 
     const token = req.query.token;
-
+    
     //verifies its integrity
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -18,7 +18,7 @@ exports.verifyEmail = async (req, res) => {
     
     
     user.isVerified = true;
-    user.isActive= true;
+    user.isActive= true; 
     await user.save();
     //login without credentials 
     //creates a token for login

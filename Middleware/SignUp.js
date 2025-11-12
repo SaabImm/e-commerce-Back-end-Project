@@ -48,7 +48,9 @@ exports.signup = async (req, res) => {
 
     // 6️⃣ Respond with token and user info
     res.status(201).json({
-      message: "Email Sent please verify ur inbox!!"
+      token: token,
+      message: "Email Sent please verify ur inbox!!",
+      user: savedUser
     });
  
   } catch (error) {
