@@ -7,7 +7,10 @@ exports.getAllUsers= async (req,res) =>{
    try{
       const data = await User.find()   
       if(!data) {res.status(404).json({message: "Users Not Found"})}
-      res.json(data)
+      res.json({
+        users : data,
+        message: "data was retreived successfully"
+      })
    } 
    catch(error){
     res.status(500).json({message: 'Server Error', error: error})
@@ -35,23 +38,24 @@ exports.getUserById = async(req, res) => {
 
 exports.createUser = async (req, res) => {
   try {
-    const {username, email, password} = req.body
-    if (!username || !email || !password ) {
+    const { name, lastname, email, password, role } = req.body;
+    if (!name, !lastname || !email || !password ) {
     return  res.status(400).json({ message: "Missing required fields" });
 }
     //verify duplicates
     const foundEmail = await User.findOne({email: email})
-    if(foundEmail){return res.status(409).json({message: "Do you already Have an account with this e-mail? Consider Loging in" })}
+    if(foundEmail){return res.status(409).json({message: "a user with this email already exists" })}
+    
   //Create the entry
   const newUser= new User (req.body)
   const savedElement= await newUser.save()
   //reponds with the data and a success message
   res.status(201).json({
     message: "User created successfully!",
-    data: savedElement
+    user: savedElement
   });
 }   catch(error){
-    res.status(500).json({message: 'Server Error', error: error})
+    res.status(500).json({message: 'Server Error'})
    }
 };
 

@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 exports.logout = async (req, res) => {
   try {
     //convert to number
-    const id = req.query.id; 
+    const id = req.query.id;  
     //verifies if it's anything but a number
 
     //finds the product if it exists

@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const UserController = require("../Controller/UserController");
+const authorizeRoles= require("../Middleware/AuthorizeToken");
+const authenticate= require("../Middleware/Authenticate")
 
 
 // Only admin can get all users
-//router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
-router.get('/', UserController.getAllUsers);
+router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
+//router.get('/', UserController.getAllUsers);
 
 
 // Get user by ID - authenticated
@@ -15,7 +17,6 @@ router.get('/:id', UserController.getUserById);
 router.get('/role=/:role', UserController.getAllByRole);
 
 // Create user - requires auth (admin)
-//router.post('/', UserController.createUser);
 router.post('/', UserController.createUser);
 
 // Only admin can delete all users
