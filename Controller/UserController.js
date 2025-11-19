@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 const User = require('../Models/UsersModels')
-
-
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const sendVerificationEmail = require("../Middleware/sendEmail")
 
 exports.getAllUsers= async (req,res) =>{
    try{
@@ -47,7 +48,15 @@ exports.createUser = async (req, res) => {
     if(foundEmail){return res.status(409).json({message: "a user with this email already exists" })}
     
   //Create the entry
-  const newUser= new User (req.body)
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({
+      name,
+      lastname,
+      email,
+      password: hashedPassword,
+      role
+    });
   const savedElement= await newUser.save()
   //reponds with the data and a success message
   res.status(201).json({
@@ -96,32 +105,86 @@ exports.deleteAllUsers= async (req, res) =>{
    }
 };
 
-exports.updateUser = async (req, res) =>{
-  try{
-    const {id} = req.params; 
-    //verifies if it's anything but a number
-    if (!mongoose.isValidObjectId(id)) {  
-     return res.status(400).json({ message: "Invalid ID format / Bad Request " });
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
     }
 
-    //update the thing
-    const UpdateUser= await User.findByIdAndUpdate(id,req.body,{ new: true, runValidators: true } )
-    if(!UpdateUser){return res.status(404).json({message: "User not found"})}
-  //response message
-    return res.status(200).json({
-    message: "User updated successfully!",
-    data: UpdateUser
-  });
+    const user = await User.findById(id).select("+password");
+    if (!user) return res.status(404).json({ message: "User not found" });
 
+    const data = req.body;
+    const isMatch = await bcrypt.compare(data.password, user.password);
+    if (!isMatch) return res.status(401).json({ message: "Password doesn't match" });
+
+    const { password, ...dataToUpdate } = data;
+
+    let isVerified = user.isVerified;
+
+    // Check if email changed
+    if (data.email && data.email !== user.email) {
+          const foundEmail = await User.findOne({email: data.email})
+          if(foundEmail){return res.status(409).json({message: "a user with this email already exists" })}
+      isVerified = false;
+      const token = jwt.sign({ id: user._id, email: data.email }, process.env.JWT_SECRET, { expiresIn: "1h" });
+      await sendVerificationEmail(data.email, token, "email-change");
+    }
+
+    // Update user
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { ...dataToUpdate, isVerified },
+      { new: true, runValidators: true }
+    );
+
+    // Generate new token
+    const token = jwt.sign(
+      { id: updatedUser._id, email: updatedUser.email, role: updatedUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "15h" }
+    );
+
+    res.status(200).json({
+      message: "User updated successfully!",
+      user: updatedUser,
+      token
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server Error", error });
   }
+};
 
+exports.resetPassword = async (req, res) =>{
+  try{
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
+    }
+
+    const user = await User.findById(id).select("+password");
+    const data = req.body;
+    const isMatch = await bcrypt.compare(data.currentPassword, user.password);
+    if (!isMatch) return res.status(401).json({ message: "Entered password doesn't match ur current one" });
+    
+    const hashedPassword = await bcrypt.hash(data.newPassword, 10);
+    const updatedUser = await User.findByIdAndUpdate(id, { password: hashedPassword }, { new: true });
+
+
+    res.status(200).json({
+      message: "Psw updated successfully!",
+      user: updatedUser,
+    });
+  }
   catch(error){
-    console.log(error)
-    res.status(500).json({message: 'Server Error', error: error})
-
-   }
+  
+  console.error(error);
+  res.status(500).json({message: 'Server Error', error: error})
+  }
 }
-
 
 exports.resetUser = async (req, res) =>{
   try{

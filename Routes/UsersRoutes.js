@@ -26,8 +26,9 @@ router.delete('/', UserController.deleteAllUsers);
 router.delete('/:id', UserController.deleteUserById);
 
 // Update user - authenticated (admin or owner)
-router.patch('/:id', UserController.updateUser);
-
+router.patch('/:id',authenticate, UserController.updateUser);
+//updatepsw
+router.patch('/psw/:id',authenticate, UserController.resetPassword);
 // Reset user - authenticated (admin only)
 router.put('/:id', UserController.resetUser);
 
