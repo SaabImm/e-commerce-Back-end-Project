@@ -120,10 +120,10 @@ exports.updateUser = async (req, res) => {
 
     const user = await User.findById(id).select("+password");
     if (!user) return res.status(404).json({ message: "User not found" });
-    console.log("this user",Updater, "is trying to update this user",user)
+    console.log("this user",Updater.name, "is trying to update this user",user.name)
     // Ownership check
-    if (Updater.role!=="admin" || Updater.id!== id) {
-    return res.status(403).json({ message: "Forbidden: you can only update your own profile" });}
+    //if (Updater.role!=="admin" || Updater.id!== id) {
+    //return res.status(403).json({ message: "Forbidden: you can only update your own profile" });}
 
     const data = req.body;
     const file = req.file;

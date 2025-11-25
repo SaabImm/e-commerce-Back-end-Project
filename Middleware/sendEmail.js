@@ -11,7 +11,7 @@ const sendVerificationEmail = async (email, token, mode = "signup") => {
       subject: "Verify your email",
       html: `
         <h2>Hello!</h2>
-        <p>Please click this link <a href="${verifyUrl}">here</a> to verify your email.</p>
+        <p>Please click this link <a href="${verifyUrl}">${verifyUrl} </a> to verify your email.</p>
       `,
       click_tracking: false
     });
