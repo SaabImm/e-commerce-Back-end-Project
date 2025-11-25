@@ -3,6 +3,7 @@ const User = require('../Models/UsersModels')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const sendVerificationEmail = require("../Middleware/sendEmail")
+const { filterUpdateFields } = require("../helpers/FilteredUsers");
 
 exports.getAllUsers= async (req,res) =>{
    try{
@@ -81,7 +82,10 @@ exports.deleteUserById= async (req, res) => {
   if (!deletedUser) {
     return res.status(404).json({ message: "Product not found" });
   }
-   res.json({message: `User ${deletedUser.email} is deleted`})
+   res.status(200).json({
+    message: `User ${deletedUser.email} is deleted`,
+    user:  deletedUser
+  })
  }
  catch(err) {
     res.status(500).json({ error: err });
@@ -108,27 +112,51 @@ exports.deleteAllUsers= async (req, res) =>{
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
+    const Updater = req.user
+    
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ message: "Invalid ID format / Bad Request" });
     }
 
     const user = await User.findById(id).select("+password");
     if (!user) return res.status(404).json({ message: "User not found" });
+    console.log("this user",Updater, "is trying to update this user",user)
+    // Ownership check
+    if (Updater.role!=="admin" || Updater.id!== id) {
+    return res.status(403).json({ message: "Forbidden: you can only update your own profile" });}
 
     const data = req.body;
-    const isMatch = await bcrypt.compare(data.password, user.password);
+    const file = req.file;
+    // Check password
+      if (!data.password) {
+    return res.status(400).json({ message: "Password is required to update profile" });
+  }
+    const isMatch = await bcrypt.compare(data.password, Updater.password);
     if (!isMatch) return res.status(401).json({ message: "Password doesn't match" });
+    //omit psw
+    delete data.password;
 
-    const { password, ...dataToUpdate } = data;
+    // Filter fields
+    const dataToUpdate = filterUpdateFields(user, data);
+    //update file
+      if (file){
+    dataToUpdate.profilePicture = `/uploads/${file.filename}`;
+}
 
     let isVerified = user.isVerified;
 
-    // Check if email changed
+    // Email change logic
     if (data.email && data.email !== user.email) {
-          const foundEmail = await User.findOne({email: data.email})
-          if(foundEmail){return res.status(409).json({message: "a user with this email already exists" })}
+      const foundEmail = await User.findOne({ email: data.email });
+      if (foundEmail) {
+        return res.status(409).json({ message: "A user with this email already exists" });
+      }
       isVerified = false;
-      const token = jwt.sign({ id: user._id, email: data.email }, process.env.JWT_SECRET, { expiresIn: "1h" });
+      const token = jwt.sign(
+        { id: user._id, email: data.email },
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
       await sendVerificationEmail(data.email, token, "email-change");
     }
 

@@ -3,10 +3,11 @@ require('dotenv').config({
 });
 const cors = require("cors");
 const express = require("express");
+const path = require ('path')
 // Created the app
 const app = express();
 //allow the front-end to access the back-end
-
+app.use('/uploads', express.static(path.join(__dirname, 'Middleware/uploads')));
 
 app.use(cors({
   origin: function (origin, callback) {

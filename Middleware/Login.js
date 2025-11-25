@@ -31,12 +31,32 @@ exports.login = async (req, res) => {
     //activate the user session
     user.isActive= true;
     await user.save();
+
     // 4️⃣ Generate JWT token
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
+        const accessToken = jwt.sign(
+      { id: user._id, 
+        role: user.role, 
+        email: user.email, 
+        password: user.password },
       process.env.JWT_SECRET,
-      { expiresIn: "15h" }
+      { expiresIn: "15m" } // short lifetime
     );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET_REFRESH,
+      { expiresIn: "7d" } 
+    );
+
+    // Send refresh token in HttpOnly cookie
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+
 
     // 5️⃣ Respond with token
     res.status(200).json({
@@ -48,9 +68,10 @@ exports.login = async (req, res) => {
         email: user.email, 
         role: user.role, 
         isActive: user.isActive, 
-        isVerified: user.isVerified 
+        isVerified: user.isVerified,
+        profilePicture: user.profilePicture
       },
-      token
+      token :accessToken
     });
 
   } catch (error) {

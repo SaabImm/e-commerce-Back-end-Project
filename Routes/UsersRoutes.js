@@ -3,7 +3,7 @@ const router = express.Router();
 const UserController = require("../Controller/UserController");
 const authorizeRoles= require("../Middleware/AuthorizeToken");
 const authenticate= require("../Middleware/Authenticate")
-
+const { upload } = require("../Middleware/FileStorage")
 
 // Only admin can get all users
 router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
@@ -23,12 +23,17 @@ router.post('/', UserController.createUser);
 router.delete('/', UserController.deleteAllUsers);
 
 // Delete a specific user - authenticated (admin or owner check in controller)
-router.delete('/:id', UserController.deleteUserById);
+router.delete('/:id', authenticate, UserController.deleteUserById);
 
-// Update user - authenticated (admin or owner)
-router.patch('/:id',authenticate, UserController.updateUser);
+// Update one's profile - authenticated (admin or owner)
+router.patch('/me/:id',authenticate, upload.single("file"), UserController.updateUser);
+
+// Update user - authenticated (admin only )
+router.patch('/:id',authenticate, authorizeRoles('admin'), upload.single("file"), UserController.updateUser);
+
 //updatepsw
 router.patch('/psw/:id',authenticate, UserController.resetPassword);
+
 // Reset user - authenticated (admin only)
 router.put('/:id', UserController.resetUser);
 
