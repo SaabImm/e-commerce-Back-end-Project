@@ -3,7 +3,7 @@ const User = require('../Models/UsersModels')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const sendVerificationEmail = require("../Middleware/sendEmail")
-const { filterUpdateFields } = require("../helpers/FilteredUsers");
+const { filterUpdateFields } = require("../Helpers/FilteredUsers");
 
 exports.getAllUsers= async (req,res) =>{
    try{
