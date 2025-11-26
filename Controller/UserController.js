@@ -112,7 +112,7 @@ exports.deleteAllUsers= async (req, res) =>{
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const Updater = req.user
+    const Updater = await User.findById(req.user.id).select("+password");
     
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ message: "Invalid ID format / Bad Request" });
@@ -120,7 +120,7 @@ exports.updateUser = async (req, res) => {
 
     const user = await User.findById(id).select("+password");
     if (!user) return res.status(404).json({ message: "User not found" });
-    console.log("this user",Updater.name, "is trying to update this user",user.name)
+   
     // Ownership check
     //if (Updater.role!=="admin" || Updater.id!== id) {
     //return res.status(403).json({ message: "Forbidden: you can only update your own profile" });}
@@ -130,7 +130,8 @@ exports.updateUser = async (req, res) => {
     // Check password
       if (!data.password) {
     return res.status(400).json({ message: "Password is required to update profile" });
-  }
+  } 
+
     const isMatch = await bcrypt.compare(data.password, Updater.password);
     if (!isMatch) return res.status(401).json({ message: "Password doesn't match" });
     //omit psw
