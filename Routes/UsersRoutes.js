@@ -37,4 +37,8 @@ router.patch('/psw/:id',authenticate, UserController.resetPassword);
 // Reset user - authenticated (admin only)
 router.put('/:id', UserController.resetUser);
 
+//validate user
+router.patch('/validate/:id', UserController.validateUser);
+
+
 module.exports = router;

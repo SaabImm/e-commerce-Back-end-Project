@@ -40,9 +40,6 @@ const AuthRoutes = require('./Routes/AuthRoutes')
 app.use("/user", usersRouter);
 app.use("/auth", AuthRoutes);
 
-
-
-
 //MongoDB connection
 const mongoose = require('mongoose');
 mongoose.connect(process.env.MONGO_URL)
