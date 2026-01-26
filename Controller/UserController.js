@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../Models/UsersModels')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const FileController = require('../Controller/FileController')
 const sendVerificationEmail = require("../Middleware/sendEmail")
 const { filterUpdateFields } = require("../Helpers/FilteredUsers");
 
@@ -28,7 +29,7 @@ exports.getUserById = async(req, res) => {
      return res.status(400).json({ message: "Invalid ID format / Bad Request " });
     }
     //finds the product if it exists
-    const u = await User.findById(id);
+    const u = await User.findById(id).populate("files");
     if (!u){ return res.status(404).json({ message: "User Not Found " });}
     //returns the product in json
     return res.json({message: "User Was Found", user:u});
@@ -112,78 +113,58 @@ exports.deleteAllUsers= async (req, res) =>{
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const Updater = await User.findById(req.user.id).select("+password");
-    
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
+    const updater = await User.findById(req.user.id).select("+password");
+
+    if (!updater) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const user = await User.findById(id).select("+password");
-    if (!user) return res.status(404).json({ message: "User not found" });
-   
-    // Ownership check
-    //if (Updater.role!=="admin" || Updater.id!== id) {
-    //return res.status(403).json({ message: "Forbidden: you can only update your own profile" });}
+    const user = await User.findById(id).select("+password").populate("files");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    const data = req.body;
-    const file = req.file;
-    // Check password
-      if (!data.password) {
-    return res.status(400).json({ message: "Password is required to update profile" });
-  } 
+    const { password, ...updates } = req.body;
 
-    const isMatch = await bcrypt.compare(data.password, Updater.password);
-    if (!isMatch) return res.status(401).json({ message: "Password doesn't match" });
-    //omit psw
-    delete data.password;
+    if (!password) {
+      return res.status(400).json({ message: "Password required" });
+    }
 
-    // Filter fields
-    const dataToUpdate = filterUpdateFields(user, data);
-    //update file
-      if (file){
-    dataToUpdate.profilePicture = `/uploads/${file.filename}`;
-}
+    const isMatch = await bcrypt.compare(password, updater.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
 
-    let isVerified = user.isVerified;
+    const allowedFields = [
+      "name",
+      "lastname",
+      "email",
+      "role",
+      "dateOfBirth",
+      "profilePicture",
+    ];
 
-    // Email change logic
-    if (data.email && data.email !== user.email) {
-      const foundEmail = await User.findOne({ email: data.email });
-      if (foundEmail) {
-        return res.status(409).json({ message: "A user with this email already exists" });
+    allowedFields.forEach((field) => {
+      if (updates[field] !== undefined) {
+        user[field] = updates[field];
       }
-      isVerified = false;
-      const token = jwt.sign(
-        { id: user._id, email: data.email },
-        process.env.JWT_SECRET,
-        { expiresIn: "1h" }
-      );
-      await sendVerificationEmail(data.email, token, "email-change");
-    }
+    });
 
-    // Update user
-    const updatedUser = await User.findByIdAndUpdate(
-      id,
-      { ...dataToUpdate, isVerified },
-      { new: true, runValidators: true }
-    );
+    await user.save();
 
-    // Generate new token
     const token = jwt.sign(
-      { id: updatedUser._id, email: updatedUser.email, role: updatedUser.role },
+      { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "15h" }
     );
 
     res.status(200).json({
-      message: "User updated successfully!",
-      user: updatedUser,
-      token
+      message: "User updated",
+      user,
+      token,
     });
-
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Server Error", error });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err });
   }
 };
 

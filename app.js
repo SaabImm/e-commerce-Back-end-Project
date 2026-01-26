@@ -3,12 +3,10 @@ require('dotenv').config({
 });
 const cors = require("cors");
 const express = require("express");
-const path = require ('path')
 // Created the app
 const app = express();
-//allow the front-end to access the back-end
-app.use('/uploads', express.static(path.join(__dirname, 'Middleware/uploads')));
 
+//allow the front-end to access the back-end
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
@@ -34,11 +32,13 @@ app.use(express.json());
 const usersRouter = require('./Routes/UsersRoutes')
 
 const AuthRoutes = require('./Routes/AuthRoutes')
+const UploadRoutes = require('./Routes/UploadRoutes')
 
 //define routes
 
 app.use("/user", usersRouter);
 app.use("/auth", AuthRoutes);
+app.use("/upload", UploadRoutes);
 
 //MongoDB connection
 const mongoose = require('mongoose');

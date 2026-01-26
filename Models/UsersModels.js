@@ -19,10 +19,7 @@ const usersSchema = new mongoose.Schema({
   isActive: {type: Boolean, default: false},
   isVerified: {type: Boolean, default: false},
   isAdminVerified: {type: Boolean, default: false},
-  file: {
-    filePath: {type: String, required: false},
-    fileName: {type: String, required : false}
-  }
+  files: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
 },
  { timestamps: true });
 

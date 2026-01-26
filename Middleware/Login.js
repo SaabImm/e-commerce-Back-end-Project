@@ -12,7 +12,7 @@ exports.login = async (req, res) => {
     }
 
     // 2️⃣ Find user
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email }).select("+password").populate("files");
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
