@@ -1,8 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const UserController = require("../Controller/UserController");
-const authorizeRoles= require("../Middleware/AuthorizeToken");
+const authorizeRoles= require("../Middleware/AuthorizeRole");
 const authenticate= require("../Middleware/Authenticate")
+const userOwnership = require("../Middleware/UserOwnership")
 
 // Only admin can get all users
 router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
@@ -31,7 +32,7 @@ router.patch('/me/:id',authenticate, UserController.updateUser);
 router.patch('/:id',authenticate, authorizeRoles('admin'), UserController.updateUser);
 
 //updatepsw
-router.patch('/psw/:id',authenticate, UserController.resetPassword);
+router.patch('/psw/:id',authenticate, userOwnership(true), UserController.resetPassword);
 
 // Reset user - authenticated (admin only)
 router.put('/:id', UserController.resetUser);

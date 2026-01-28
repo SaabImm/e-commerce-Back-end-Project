@@ -116,7 +116,7 @@ exports.updateUser = async (req, res) => {
     const updater = await User.findById(req.user.id).select("+password");
 
     if (!updater) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(403).json({ message: "Unauthorized" });
     }
 
     const user = await User.findById(id).select("+password").populate("files");

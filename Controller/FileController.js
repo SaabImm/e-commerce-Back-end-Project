@@ -1,19 +1,20 @@
 const mongoose = require('mongoose'); 
 const cloudinary = require('../Config/claudinary'); 
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
 const streamifier = require('streamifier');
 const File = require('../Models/FilesModels')
 const User = require ("../Models/UsersModels")
+
 
 
 exports.uploadFile = async (req, res) => {
   try {
     const id = req.params.id || req.params._id
     const folder = req.body.folder || "misc";
+
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
+    
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder: `${folder}/${id}`},
       async (error, result) => {
@@ -30,7 +31,7 @@ exports.uploadFile = async (req, res) => {
             public_id,
             format
           } = result;
-
+          
           const newFile = new File({
             url: secure_url,
             fileName: req.file.originalname,

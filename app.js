@@ -30,7 +30,6 @@ app.use(cors({
 app.use(express.json());
 
 const usersRouter = require('./Routes/UsersRoutes')
-
 const AuthRoutes = require('./Routes/AuthRoutes')
 const UploadRoutes = require('./Routes/UploadRoutes')
 

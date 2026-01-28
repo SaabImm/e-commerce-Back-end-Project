@@ -39,7 +39,7 @@ exports.login = async (req, res) => {
         email: user.email, 
         password: user.password },
       process.env.JWT_SECRET,
-      { expiresIn: "15m" } // short lifetime
+      { expiresIn: "5d" } // short lifetime
     );
 
     const refreshToken = jwt.sign(
