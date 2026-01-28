@@ -217,7 +217,7 @@ exports.replaceFile = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder: `${folder}/${id}`},
+      { folder: `${folder}/${oldFile.owner}`},
       async (error, result) => {
         try {
           if (error) {
