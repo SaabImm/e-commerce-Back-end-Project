@@ -2,9 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../Models/UsersModels')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const FileController = require('../Controller/FileController')
-const sendVerificationEmail = require("../Middleware/sendEmail")
-const { filterUpdateFields } = require("../Helpers/FilteredUsers");
+
 
 exports.getAllUsers= async (req,res) =>{
    try{

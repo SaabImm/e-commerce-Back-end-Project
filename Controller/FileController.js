@@ -36,6 +36,7 @@ exports.uploadFile = async (req, res) => {
             url: secure_url,
             fileName: req.file.originalname,
             type: format,
+            folder: folder,
             fileId: public_id,
             owner: id
           });
@@ -237,6 +238,7 @@ exports.replaceFile = async (req, res) => {
             url: secure_url,
             fileName: newFile.originalname,
             type: format,
+            folder: folder,
             fileId: public_id,
             owner: oldFile.owner
           });
