@@ -13,10 +13,10 @@ router.get('/verify',verifyEmail.verifyEmail);
 router.post('/login', login.login);
 router.post('/logout',authenticate, logout.logout);
 router.post('/refresh',refreshAccessToken.refreshAccessToken);
-
+//email tester
 router.post("/email", async (req, res) => {
   try {
-    await sendVerificationEmail("sabrinabessa754@gmail.com"); // hardcoded recipient
+    await sendVerificationEmail("nada61449@gmail.com"); // hardcoded recipient
     res.status(200).json({ message: "✅ Test email sent successfully" });
   } catch (err) {
     console.error(err);

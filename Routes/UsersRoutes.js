@@ -17,7 +17,7 @@ router.get('/:id', UserController.getUserById);
 router.get('/role=/:role', UserController.getAllByRole);
 
 // Create user - requires auth (admin)
-router.post('/', UserController.createUser);
+router.post('/', authenticate, authorizeRoles('admin'),UserController.createUser);
 
 // Only admin can delete all users
 router.delete('/', UserController.deleteAllUsers);
@@ -26,10 +26,8 @@ router.delete('/', UserController.deleteAllUsers);
 router.delete('/:id', authenticate, UserController.deleteUserById);
 
 // Update one's profile - authenticated (admin or owner)
-router.patch('/me/:id',authenticate, UserController.updateUser);
+router.patch('/me/:id',authenticate, UserController.updateUser(['name']));
 
-// Update user - authenticated (admin only )
-router.patch('/:id',authenticate, authorizeRoles('admin'), UserController.updateUser);
 
 //updatepsw
 router.patch('/psw/:id',authenticate, userOwnership(true), UserController.resetPassword);

@@ -27,6 +27,7 @@
 const nodemailer = require("nodemailer");
 
 // ⚡ Create transporter
+
 const transporter = nodemailer.createTransport({
   service: "gmail", // can be "outlook" or others
   auth: {
@@ -36,8 +37,9 @@ const transporter = nodemailer.createTransport({
 });
 
 // ⚡ Hardcoded email sender
-const sendVerificationEmail = async (to) => {
+const sendVerificationEmail = async (to, token, mode= "signup") => {
   try {
+    const verifyUrl = `${process.env.VERIFY_URL}?token=${encodeURIComponent(token)}&mode=${mode}`;
     const info = await transporter.sendMail({
       from: process.env.EMAIL_USER,          // sender
       to,       // recipient 
@@ -45,7 +47,7 @@ const sendVerificationEmail = async (to) => {
       html: `
         <h2>Hello!</h2>
         <p>This is a test email from Node.js/Express.</p>
-        <a href="#">Click here</a>
+        <a href=${verifyUrl}>Click here ${verifyUrl}</a>
       `,                                      // hardcoded HTML
     });
 

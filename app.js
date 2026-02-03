@@ -32,13 +32,13 @@ app.use(express.json());
 const usersRouter = require('./Routes/UsersRoutes')
 const AuthRoutes = require('./Routes/AuthRoutes')
 const UploadRoutes = require('./Routes/UploadRoutes')
-
+const AdminRoutes = require('./Routes/AdminRoutes')
 //define routes
 
 app.use("/user", usersRouter);
 app.use("/auth", AuthRoutes);
 app.use("/upload", UploadRoutes);
-
+app.use("/admin", AdminRoutes);
 //MongoDB connection
 const mongoose = require('mongoose');
 mongoose.connect(process.env.MONGO_URL)

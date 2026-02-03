@@ -108,8 +108,9 @@ exports.deleteAllUsers= async (req, res) =>{
    }
 };
 
-exports.updateUser = async (req, res) => {
-  try {
+exports.updateUser = (allowedFields= []) => { 
+  return async (req, res) => { 
+    try {
     const { id } = req.params;
     const updater = await User.findById(req.user.id).select("+password");
 
@@ -123,7 +124,7 @@ exports.updateUser = async (req, res) => {
     }
 
     const { password, ...updates } = req.body;
-
+    const email= user.email
     if (!password) {
       return res.status(400).json({ message: "Password required" });
     }
@@ -133,22 +134,13 @@ exports.updateUser = async (req, res) => {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    const allowedFields = [
-      "name",
-      "lastname",
-      "email",
-      "role",
-      "dateOfBirth",
-      "profilePicture",
-    ];
-
     allowedFields.forEach((field) => {
       if (updates[field] !== undefined) {
         user[field] = updates[field];
       }
     });
 
-    await user.save();
+    const UpdatedUser= await user.save();
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -158,14 +150,13 @@ exports.updateUser = async (req, res) => {
 
     res.status(200).json({
       message: "User updated",
-      user,
+      user: UpdatedUser,
       token,
     });
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err });
   }
-};
-
+};}
 exports.resetPassword = async (req, res) =>{
   try{
     const { id } = req.params;
