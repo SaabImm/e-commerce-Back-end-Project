@@ -15,6 +15,11 @@ exports.uploadFile = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
     
+        const user = await User.findById(id);
+        if (!user) {
+       return res.status(404).json({ message: 'User Not Found' });
+      }
+
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder: `${folder}/${id}`},
       async (error, result) => {

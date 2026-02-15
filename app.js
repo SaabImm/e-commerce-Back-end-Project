@@ -33,12 +33,17 @@ const usersRouter = require('./Routes/UsersRoutes')
 const AuthRoutes = require('./Routes/AuthRoutes')
 const UploadRoutes = require('./Routes/UploadRoutes')
 const AdminRoutes = require('./Routes/AdminRoutes')
+const PermissionRoutes = require('./Routes/PermissionsRoutes')
 //define routes
 
 app.use("/user", usersRouter);
 app.use("/auth", AuthRoutes);
 app.use("/upload", UploadRoutes);
 app.use("/admin", AdminRoutes);
+
+//config Routes
+app.use("/permissions", PermissionRoutes);
+
 //MongoDB connection
 const mongoose = require('mongoose');
 mongoose.connect(process.env.MONGO_URL)
