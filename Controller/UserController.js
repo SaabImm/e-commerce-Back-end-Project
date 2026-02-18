@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../Models/UsersModels')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-
+const PermissionService = require('../Services/PermissionService');
 
 exports.getAllUsers= async (req,res) =>{
    try{
@@ -21,16 +21,28 @@ exports.getAllUsers= async (req,res) =>{
 exports.getUserById = async(req, res) => {
   try {
     //convert to number
-    const {id} = req.params; 
+    const targetId = req.params.id; 
+    const viewerId = req.user.id;
+
     //verifies if it's anything but a number
-    if (!mongoose.isValidObjectId(id)) {  
+    if (!mongoose.isValidObjectId(targetId)) {  
      return res.status(400).json({ message: "Invalid ID format / Bad Request " });
     }
+
     //finds the product if it exists
-    const u = await User.findById(id).populate("files");
-    if (!u){ return res.status(404).json({ message: "User Not Found " });}
+    const targetUser = await User.findById(targetId).populate("files");
+    if (!targetUser){ return res.status(404).json({ message: "User Not Found !!" });}
+
+    const canPerform = await PermissionService.canPerform(viewerId,targetId, "read")
+    console.log(canPerform)
+    if (!canPerform){
+      return res.status(403).json({message : "Unauthorized!!"})
+    }
     //returns the product in json
-    return res.json({message: "User Was Found", user:u});
+    return res.json({
+      message: "User Found", 
+      user:targetUser
+    });
     } 
    catch(error){
     res.status(500).json({message: 'Server Error', error: error})
@@ -40,7 +52,8 @@ exports.getUserById = async(req, res) => {
 exports.createUser = async (req, res) => {
   try {
     const { name, lastname, email, password, role } = req.body;
-    if (!name, !lastname || !email || !password ) {
+    const viewerId = req.user.id || req.user._id 
+    if (!name || !lastname || !email || !password ) {
     return  res.status(400).json({ message: "Missing required fields" });
 }
     //verify duplicates
@@ -57,6 +70,7 @@ exports.createUser = async (req, res) => {
       password: hashedPassword,
       role
     });
+
   const savedElement= await newUser.save()
   //reponds with the data and a success message
   res.status(201).json({
@@ -71,17 +85,24 @@ exports.createUser = async (req, res) => {
 exports.deleteUserById= async (req, res) => {
   try{
 // verifies if it's anything but a number
-    const {id} = req.params
-  if (!mongoose.isValidObjectId(id)) { 
+    const targetId = req.params.id
+    const viewerId = req.user.id
+  if (!mongoose.isValidObjectId(targetId)) { 
     return res.status(400).json({ message: "Invalid ID format / Bad Request " });
   }
-//Finds the Element
-  const deletedUser = await User.findByIdAndDelete(id);
-  
-  if (!deletedUser) {
-    return res.status(404).json({ message: "Product not found" });
+
+
+//Finds the Element and delets it
+  const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete")
+  if (!canDelete) {
+    return res.status(403).json({ message: "unauthorized operation!!"})
   }
-   res.status(200).json({
+
+    const deletedUser = await User.findByIdAndDelete(targetId);
+      if (!deletedUser) {
+    return res.status(404).json({ message: "User not found" });
+  }
+    res.status(200).json({
     message: `User ${deletedUser.email} is deleted`,
     user:  deletedUser
   })
@@ -108,42 +129,49 @@ exports.deleteAllUsers= async (req, res) =>{
    }
 };
 
-exports.updateUser = (allowedFields= []) => { 
-  return async (req, res) => { 
+exports.updateUser = async (req, res) =>{
     try {
-    const { id } = req.params;
-    const updater = await User.findById(req.user.id).select("+password");
+    const targetId = req.params.id;
+    const viewer = await User.findById(req.user.id).select("+password");
 
-    if (!updater) {
-      return res.status(403).json({ message: "Unauthorized" });
+    if (!viewer) {
+      return res.status(404).json({ message: "not found" });
     }
 
-    const user = await User.findById(id).select("+password").populate("files");
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const targetUser = await User.findById(targetId).select("+password").populate("files");
+    if (!targetUser) {
+      return res.status(404).json({ message: "Target User not found" });
+    }
+    const canUpdate = await PermissionService.canPerform(viewer.id, targetId, "update" )
+
+    if (!canUpdate) {
+      return res.status(403).json({message: "unauthorized operation !"})
     }
 
     const { password, ...updates } = req.body;
-    const email= user.email
+        
+    
+    //check for password
     if (!password) {
       return res.status(400).json({ message: "Password required" });
     }
-
-    const isMatch = await bcrypt.compare(password, updater.password);
+    const isMatch = await bcrypt.compare(password, viewer.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Wrong password" });
     }
-
+    //get permissions
+    const EditableFields = await PermissionService.getEditableFields(viewer.id, targetId)
+    const allowedFields = EditableFields.permissions.canUpdate
     allowedFields.forEach((field) => {
-      if (updates[field] !== undefined) {
-        user[field] = updates[field];
-      }
+    if (updates[field] !== undefined) {
+      targetUser[field] = updates[field];
+    }
     });
 
-    const UpdatedUser= await user.save();
-
+    //update user
+    const UpdatedUser= await targetUser.save();
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { id: targetUser._id, role: targetUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "15h" }
     );
@@ -156,7 +184,8 @@ exports.updateUser = (allowedFields= []) => {
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err });
   }
-};}
+};
+
 exports.resetPassword = async (req, res) =>{
   try{
     const { id } = req.params;

@@ -6,12 +6,12 @@ const authenticate= require("../Middleware/Authenticate")
 const userOwnership = require("../Middleware/UserOwnership")
 
 // Only admin can get all users
-router.get('/', authenticate, authorizeRoles('admin'), UserController.getAllUsers);
+
 //router.get('/', UserController.getAllUsers);
 
 
 // Get user by ID - authenticated
-router.get('/:id', UserController.getUserById);
+router.get('/:id', authenticate, UserController.getUserById);
 
 // Only admin can get users by role
 router.get('/role=/:role', UserController.getAllByRole);
@@ -19,14 +19,13 @@ router.get('/role=/:role', UserController.getAllByRole);
 // Create user - requires auth (admin)
 router.post('/', authenticate, authorizeRoles('admin'),UserController.createUser);
 
-// Only admin can delete all users
-router.delete('/', UserController.deleteAllUsers);
+
 
 // Delete a specific user - authenticated (admin or owner check in controller)
 router.delete('/:id', authenticate, UserController.deleteUserById);
 
 // Update one's profile - authenticated (admin or owner)
-router.patch('/me/:id',authenticate, UserController.updateUser(['name']));
+router.patch('/me/:id',authenticate, UserController.updateUser);
 
 
 //updatepsw

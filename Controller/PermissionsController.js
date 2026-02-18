@@ -7,7 +7,7 @@ class PermissionController {
   async getUserPermissions(req, res) {
     try {
       const { userId } = req.params;
-      const viewerId = req.body.user.id; // From JWT middleware, not body!
+      const viewerId = req.user.id; // From JWT middleware, not body!
       const tenantId= req.user.tenantId
       
       const permissions = await PermissionService.getUserPermissions(
@@ -16,13 +16,13 @@ class PermissionController {
         'User',
         tenantId
       );
-      
+      console.log(permissions)
       res.json({
         success: true,
         permissions,
         viewer: {
           id: viewerId,
-          role: req.body.user.role
+          role: req.user.role
         },
         targetUser: userId
       });
@@ -41,7 +41,7 @@ class PermissionController {
   async getEditableFields(req, res) {
     try {
       const { userId } = req.params;
-      const viewerId = req.body.user.id;
+      const viewerId = req.user.id;
       const tenantId = req.user.tenantId;
       
       const editableFields = await PermissionService.getEditableFields(
@@ -69,8 +69,9 @@ class PermissionController {
   async checkOperation(req, res) {
     try {
       const { operation, model = 'User' } = req.body;
-      const viewerId = req.body.user.id;
       const targetId = req.params.userId;
+      
+      const viewerId = req.user.id;
       const tenantId = req.user.tenantId;
       
       const canPerform = await PermissionService.canPerform(
@@ -80,7 +81,7 @@ class PermissionController {
         model,
         tenantId
       );
-      
+
       res.json({
         success: true,
         canPerform,
@@ -103,7 +104,7 @@ class PermissionController {
   async initializeDefaults(req, res) {
     try {
       // Get user from auth middleware, not body!
-      const user = req.body.user;
+      const user = req.user;
       
       if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
         return res.status(403).json({
@@ -112,7 +113,7 @@ class PermissionController {
         });
       }
       
-      const results = await PermissionService.initializeDefaultSchemas(user._id || user.id);
+      const results = await PermissionService.initializeDefaultSchemas(user._id);
   
       res.status(201).json({
         success: true,

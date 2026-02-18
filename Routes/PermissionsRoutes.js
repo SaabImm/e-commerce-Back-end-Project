@@ -14,7 +14,7 @@ router.get('/user/:userId', PermissionController.getUserPermissions);
 router.get('/user/:userId/fields', PermissionController.getEditableFields);
 
 // Check if user can perform specific operation
-router.post('/user/:userId/check-operation', PermissionController.checkOperation);
+router.post('/:userId/check-operation', PermissionController.checkOperation);
 
 // ===== ADMIN-ONLY ROUTES =====
 // Initialize default permission schemas (admin only)

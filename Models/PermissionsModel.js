@@ -35,14 +35,31 @@ const permissionFieldSchema = new mongoose.Schema({
   
   // Who can EDIT this field
   editableBy: [{
-    role: {
+  role: {
+    name: {
       type: String,
-      enum: ['user', 'moderator', 'admin', 'super_admin', 'any'],
+      enum: ['user', 'moderator', 'admin', 'super_admin'],
       required: true
     },
+    level: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 10,
+      default: function() {
+        const levelMap = {
+          'user': 0,
+          'moderator': 1,
+          'admin': 2,
+          'super_admin': 3
+        };
+        return levelMap[this.role.name];
+      }
+    }
+  },
     condition: {
       type: String,
-      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom'],
+      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom', 'higher_level', 'lower_level', 'same_level'],
       default: 'any'
     },
     // Custom condition logic (stored as string to be eval'ed safely)
@@ -52,13 +69,30 @@ const permissionFieldSchema = new mongoose.Schema({
   // Who can VIEW this field
   visibleTo: [{
     role: {
-      type: String,
-      enum: ['user', 'moderator', 'admin', 'super_admin', 'any'],
-      required: true
+      name: {
+        type: String,
+        enum: ['user', 'moderator', 'admin', 'super_admin'],
+        required: true
+      },
+      level: {
+        type: Number,
+        required: true,
+        min: 0,
+        max: 10,
+        default: function() {
+          const levelMap = {
+            'user': 0,
+            'moderator': 1,
+            'admin': 2,
+            'super_admin': 3
+          };
+          return levelMap[this.role.name];
+        }
+      }
     },
     condition: {
       type: String,
-      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom'],
+      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom', 'higher_level', 'lower_level', 'same_level'],
       default: 'any'
     },
     customCondition: String
@@ -181,29 +215,46 @@ const permissionOperationSchema = new mongoose.Schema({
   },
   
   // Who can perform this operation
-  allowed: [{
-    role: {
-      type: String,
-      enum: ['user', 'moderator', 'admin', 'super_admin'],
-      required: true
-    },
-    condition: {
-      type: String,
-      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom'],
-      default: 'any'
-    },
-    customCondition: String,
-    
-    // Additional constraints
-    constraints: {
-      timeOfDay: {
-        start: String, // "09:00"
-        end: String    // "17:00"
-      },
-      maxPerDay: Number,
-      requiresApproval: Boolean
+ allowed: [{
+ role: {
+  name: {
+    type: String,
+    enum: ['user', 'moderator', 'admin', 'super_admin'],
+    required: true
+  },
+  level: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 10,
+    default: function() {
+      const levelMap = {
+        'user': 0,
+        'moderator': 1,
+        'admin': 2,
+        'super_admin': 3
+      };
+      return levelMap[this.role.name];
     }
-  }],
+  }
+},
+  condition: {
+    type: String,
+    enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom', 'higher_level', 'lower_level', 'same_level'],
+    default: 'any'
+  },
+  customCondition: String,
+  
+  // Additional constraints
+  constraints: {
+    timeOfDay: {
+      start: String, // "09:00"
+      end: String    // "17:00"
+    },
+    maxPerDay: Number,
+    requiresApproval: Boolean
+  }
+}],
   
   // Pre-conditions for the operation
   preConditions: [{
@@ -392,8 +443,8 @@ permissionSchema.methods.getEditableFields = function(role, conditionContext) {
 };
 
 permissionSchema.methods.checkRule = function(rule, role, context) {
-  // Check role
-  if (rule.role !== 'any' && rule.role !== role) {
+  // Check role name 
+  if (rule.role.name !== role) {
     return false;
   }
   
@@ -401,14 +452,30 @@ permissionSchema.methods.checkRule = function(rule, role, context) {
   switch (rule.condition) {
     case 'self':
       return context.isSelf === true;
+      
     case 'same_tenant':
-      return context.tenantId && context.tenantId === context.targetTenantId;
+      return context.tenantId && context.targetTenantId && 
+             context.tenantId.toString() === context.targetTenantId.toString();
+      
     case 'tenant_admin':
-      return role === 'admin' && context.tenantId && context.tenantId === context.targetTenantId;
+      return role === 'admin' && context.tenantId && context.targetTenantId && 
+             context.tenantId.toString() === context.targetTenantId.toString();
+      
+    case 'higher_level':
+      return context.viewerLevel < context.targetLevel;
+      
+    case 'lower_level':
+      return context.viewerLevel > context.targetLevel;
+      
+    case 'same_level':
+      return context.viewerLevel === context.targetLevel;
+      
     case 'custom':
-      // In production, you'd use a safe evaluator like vm2
       return rule.customCondition ? this.evaluateCondition(rule.customCondition, context) : false;
+      
     case 'any':
+      return true;  // 'any' condition means always true regardless of other factors
+      
     default:
       return true;
   }
