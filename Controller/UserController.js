@@ -34,7 +34,6 @@ exports.getUserById = async(req, res) => {
     if (!targetUser){ return res.status(404).json({ message: "User Not Found !!" });}
 
     const canPerform = await PermissionService.canPerform(viewerId,targetId, "read")
-    console.log(canPerform)
     if (!canPerform){
       return res.status(403).json({message : "Unauthorized!!"})
     }
@@ -51,37 +50,57 @@ exports.getUserById = async(req, res) => {
 
 exports.createUser = async (req, res) => {
   try {
-    const { name, lastname, email, password, role } = req.body;
-    const viewerId = req.user.id || req.user._id 
-    if (!name || !lastname || !email || !password ) {
-    return  res.status(400).json({ message: "Missing required fields" });
-}
-    //verify duplicates
-    const foundEmail = await User.findOne({email: email})
-    if(foundEmail){return res.status(409).json({message: "a user with this email already exists" })}
-    
-  //Create the entry
-  const hashedPassword = await bcrypt.hash(password, 10);
+    const viewerId = req.user.id || req.user._id;
+    const { password, ...otherFields } = req.body;
 
-    const newUser = new User({
-      name,
-      lastname,
-      email,
-      password: hashedPassword,
-      role
+    // 1. Basic password check
+    if (!password) {
+      return res.status(400).json({ message: "Password required" });
+    }
+
+    // 2. Check create operation permission
+    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create");
+    if (!canCreate) {
+      return res.status(403).json({ message: "Unauthorized operation" });
+    }
+
+    // 3. Get creatable fields for this viewer (based on their role/tenant)
+    const creatable = await PermissionService.getCreatableFields(viewerId, viewerId);
+    const allowedFields = creatable.fields; // array of field names
+
+    // 4. Build user data using only allowed fields
+    const userData = {};
+    allowedFields.forEach(field => {
+      if (otherFields[field] !== undefined) {
+        userData[field] = otherFields[field];
+      }
     });
 
-  const savedElement= await newUser.save()
-  //reponds with the data and a success message
-  res.status(201).json({
-    message: "User created successfully!",
-    user: savedElement
-  });
-}   catch(error){
-    res.status(500).json({message: 'Server Error'})
-   }
-};
+    // 5. Hash password and add it
+    const hashedPassword = await bcrypt.hash(password, 10);
+    userData.password = hashedPassword;
 
+    // 6. Check for duplicate email (if email is being set)
+    if (userData.email) {
+      const existing = await User.findOne({ email: userData.email });
+      if (existing) {
+        return res.status(409).json({ message: "Email already exists" });
+      }
+    }
+
+    // 7. Create and save the user
+    const newUser = new User(userData);
+    const savedUser = await newUser.save();
+
+    return res.status(201).json({
+      message: "User created successfully",
+      user: savedUser
+    });
+  } catch (error) {
+    console.error("Create user error:", error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
 exports.deleteUserById= async (req, res) => {
   try{
 // verifies if it's anything but a number
@@ -95,15 +114,15 @@ exports.deleteUserById= async (req, res) => {
 //Finds the Element and delets it
   const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete")
   if (!canDelete) {
-    return res.status(403).json({ message: "unauthorized operation!!"})
+    return res.status(403).json({ message: "Opération Non autorisée!"})
   }
 
     const deletedUser = await User.findByIdAndDelete(targetId);
       if (!deletedUser) {
-    return res.status(404).json({ message: "User not found" });
+    return res.status(404).json({ message: "Utilisateur Non trouvé" });
   }
     res.status(200).json({
-    message: `User ${deletedUser.email} is deleted`,
+    message: `Utilisateur ${deletedUser.email} a été supprimé`,
     user:  deletedUser
   })
  }
@@ -129,29 +148,28 @@ exports.deleteAllUsers= async (req, res) =>{
    }
 };
 
-exports.updateUser = async (req, res) =>{
-    try {
+exports.updateUser = async (req, res) => {
+  try {
     const targetId = req.params.id;
-    const viewer = await User.findById(req.user.id).select("+password");
+    const viewerId = req.user._id; // safer
 
+    const viewer = await User.findById(viewerId).select("+password");
     if (!viewer) {
-      return res.status(404).json({ message: "not found" });
+      return res.status(404).json({ message: "VIEWER not found" });
     }
 
     const targetUser = await User.findById(targetId).select("+password").populate("files");
     if (!targetUser) {
       return res.status(404).json({ message: "Target User not found" });
     }
-    const canUpdate = await PermissionService.canPerform(viewer.id, targetId, "update" )
 
+    const canUpdate = await PermissionService.canPerform(viewerId, targetId, "update");
     if (!canUpdate) {
-      return res.status(403).json({message: "unauthorized operation !"})
+      return res.status(403).json({ message: "Unauthorized operation!" });
     }
 
     const { password, ...updates } = req.body;
-        
-    
-    //check for password
+
     if (!password) {
       return res.status(400).json({ message: "Password required" });
     }
@@ -159,30 +177,36 @@ exports.updateUser = async (req, res) =>{
     if (!isMatch) {
       return res.status(401).json({ message: "Wrong password" });
     }
-    //get permissions
-    const EditableFields = await PermissionService.getEditableFields(viewer.id, targetId)
-    const allowedFields = EditableFields.permissions.canUpdate
-    allowedFields.forEach((field) => {
-    if (updates[field] !== undefined) {
-      targetUser[field] = updates[field];
+
+    const editableFields = await PermissionService.getEditableFields(viewerId, targetId);
+    const allowedFields = editableFields.permissions.canUpdate;
+
+    if (allowedFields.length === 0) {
+      return res.status(400).json({ message: "No fields to update" });
     }
+
+    allowedFields.forEach((field) => {
+      if (updates[field] !== undefined) {
+        targetUser[field] = updates[field];
+      }
     });
 
-    //update user
-    const UpdatedUser= await targetUser.save();
+    const updatedUser = await targetUser.save();
+
     const token = jwt.sign(
-      { id: targetUser._id, role: targetUser.role },
+      { id: updatedUser._id, role: updatedUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "15h" }
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "User updated",
-      user: UpdatedUser,
+      user: updatedUser,
       token,
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err });
+    console.error("Update user error:", err);
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -212,7 +236,7 @@ exports.resetPassword = async (req, res) =>{
   console.error(error);
   res.status(500).json({message: 'Server Error', error: error})
   }
-}
+};
 
 exports.resetUser = async (req, res) =>{
   try{
@@ -247,7 +271,7 @@ exports.resetUser = async (req, res) =>{
     console.error(error);
     res.status(500).json({message: 'Server Error', error: error})
    }
-}
+};
 
 exports.getAllByRole = async(req, res) =>{
   try{
@@ -267,7 +291,7 @@ exports.getAllByRole = async(req, res) =>{
   console.error(error); 
   return res.status(500).json({message: 'Server Error', error: error})
   }
-}
+};
 
 exports.validateUser = async (req, res) => {
   try {

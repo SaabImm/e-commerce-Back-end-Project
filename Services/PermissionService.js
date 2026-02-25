@@ -65,6 +65,7 @@ class PermissionService {
     const permissions = {
       canUpdate: [],
       canView: [],
+      canCreate : [],
       operations: {},
       fieldConfigs: {}
     };
@@ -77,6 +78,9 @@ class PermissionService {
       const canEdit = field.editableBy.some(rule => 
         permissionDoc.checkRule(rule, viewer.role, context)
       );
+      const canCreate = field.creatableBy.some(rule => 
+        permissionDoc.checkRule(rule, viewer.role, context)
+      );
       
       // Check if viewer can VIEW this field
       const canView = field.visibleTo.some(rule => 
@@ -85,9 +89,10 @@ class PermissionService {
       
       if (canEdit) permissions.canUpdate.push(fieldName);
       if (canView) permissions.canView.push(fieldName);
+      if (canCreate) permissions.canCreate.push(fieldName);
       
       // Add field config for frontend
-      if (canView) {
+      if (canView || canCreate) {
         permissions.fieldConfigs[fieldName] = {
           label: field.label,
           labelAr: field.labelAr,
@@ -171,9 +176,29 @@ class PermissionService {
     };
   }
 
+    async getViewableFields(viewerId, targetId, model = 'User', tenantId = null) {
+    const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
+    return {
+      fields: permissions.canView,
+      configs: permissions.fieldConfigs,
+      permissions
+    };
+  }
+
+
+    async getCreatableFields(viewerId, targetId, model = 'User', tenantId = null) {
+    const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
+   
+    return {
+      fields: permissions.canCreate,
+      configs: permissions.fieldConfigs,
+      permissions
+    };
+  }
+
   // Initialize default permission schemas
-async initializeDefaultSchemas(createdBy = null) {
-  const defaultSchemas = {
+  async initializeDefaultSchemas(createdBy = null) {
+  const updatedSchemas = {
     User: {
       model: 'User',
       version: 1,
@@ -486,7 +511,7 @@ async initializeDefaultSchemas(createdBy = null) {
 
   const results = { created: [], errors: [] };
   
-  for (const [model, schema] of Object.entries(defaultSchemas)) {
+  for (const [model, schema] of Object.entries(updatedSchemas)) {
     try {
       const exists = await PermissionSchema.findOne({ 
         model,
@@ -510,6 +535,99 @@ async initializeDefaultSchemas(createdBy = null) {
   
   return results;
 }
+
+  async createNewVersion(changes, changedBy, status) {
+    //get the highest version doc 
+      const highestVersionDoc = await PermissionSchema.findOne({ 
+    model: 'User' 
+  }).sort({ version: -1 });
+  
+  const highestVersion = highestVersionDoc ? highestVersionDoc.version : 0;
+
+  // Get current active version
+  const current = await PermissionSchema.findOne({ 
+    model: 'User', 
+    isActive: true 
+  });
+
+  
+  if (!current) {
+    throw new Error('No active schema found');
+  }
+
+  // Merge fields - keep existing, update changed, add new
+const mergedFields = [];
+
+// 1. Process all existing fields
+current.fields.forEach((existingField) => {
+  // Check if this field is being changed
+  const changedField = changes.fields?.find(cf => cf.name === existingField.name);
+  
+  if (changedField) {
+    // Field exists in changes - use the updated version
+    mergedFields.push(changedField);
+  } else {
+    // Field not in changes - keep existing
+    mergedFields.push(existingField);
+  }
+});
+
+// 2. Add any completely new fields (not in current)
+changes.fields?.forEach((changedField) => {
+  const exists = current.fields.some(ef => ef.name === changedField.name);
+  if (!exists) {
+    mergedFields.push(changedField);
+  }
+});
+
+// Merge operations - same logic
+const mergedOperations = [];
+
+// Process existing operations
+current.operations.forEach((existingOp) => {
+  const changedOp = changes.operations?.find(co => co.operation === existingOp.operation);
+  
+  if (changedOp) {
+    mergedOperations.push(changedOp);
+  } else {
+    mergedOperations.push(existingOp);
+  }
+});
+
+// Add new operations
+changes.operations?.forEach((changedOp) => {
+  const exists = current.operations.some(eo => eo.operation === changedOp.operation);
+  if (!exists) {
+    mergedOperations.push(changedOp);
+  }
+});
+
+// Create new version with merged data
+const newVersion = {
+  ...current.toObject(),
+  _id: undefined,
+  version: highestVersion + 1,
+  isActive: true,
+  activatedAt: new Date(),
+  updatedBy: changedBy,
+  status: status,
+  fields: mergedFields,
+  operations: mergedOperations
+};
+
+  
+  // Deactivate old version
+  current.isActive = false;
+  current.status = "archived"
+  current.deactivatedAt = new Date();
+  await current.save();
+  
+  // Save new version
+  return PermissionSchema.create(newVersion);
+}
+
+
+
 }
 
 module.exports = new PermissionService();

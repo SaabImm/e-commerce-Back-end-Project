@@ -95,19 +95,19 @@ exports.logout = async (req, res) => {
 
 exports.signup = async (req, res) => {
   try {
-    const { name, lastname, email, password } = req.body;
-    
+    const { name, lastname, email, password, dateOfBirth } = req.body;
+
     // 1️⃣ Check required fields
     if (!name || !lastname || !email || !password) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    //check if the email is valid
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ message: "Please enter a valid email address" });
     }
+
     // 2️⃣ Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -117,36 +117,42 @@ exports.signup = async (req, res) => {
     // 3️⃣ Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4️⃣ Create user
-    const newUser = new User({
+    // 4️⃣ Build user data
+    const userData = {
       name,
       lastname,
       email,
       password: hashedPassword,
       role: "user"
-    });
+    };
+    // Add dateOfBirth only if provided
+    if (dateOfBirth) {
+      userData.dateOfBirth = dateOfBirth;
+    }
 
+    const newUser = new User(userData);
     const savedUser = await newUser.save();
-      //generates verification Token
-         const token = jwt.sign(
-            { id: savedUser._id, role: savedUser.role },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-          );
 
+    // 5️⃣ Generate verification token
+    const token = jwt.sign(
+      { id: savedUser._id, role: savedUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    // 6️⃣ Send verification email
     await sendVerificationEmail(savedUser.email, token);
 
-    // 6️⃣ Respond with token and user info
+    // 7️⃣ Respond
     res.status(201).json({
-      token: token,
-      message: "Email Sent please verify ur inbox!!",
+      token,
+      message: "Email sent, please verify your inbox!",
       user: savedUser
     });
- 
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server Error" });
   }
 };
-
 

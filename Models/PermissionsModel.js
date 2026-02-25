@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+
+//Fields
 const permissionFieldSchema = new mongoose.Schema({
   // Field identification
   name: {
@@ -33,36 +35,67 @@ const permissionFieldSchema = new mongoose.Schema({
     required: true
   },
   
+  // Who can CREATE this field (NEW!)
+  creatableBy: [{
+    role: {
+      name: {
+        type: String,
+        enum: ['user', 'moderator', 'admin', 'super_admin'],
+        required: true
+      },
+      level: {
+        type: Number,
+        required: true,
+        min: 0,
+        max: 10,
+        default: function() {
+          const levelMap = {
+            'user': 0,
+            'moderator': 1,
+            'admin': 2,
+            'super_admin': 3
+          };
+          return levelMap[this.role.name];
+        }
+      }
+    },
+    condition: {
+      type: String,
+      enum: ['any', 'same_tenant', 'custom'],
+      default: 'any'
+    },
+    customCondition: String
+  }],
+  
   // Who can EDIT this field
   editableBy: [{
-  role: {
-    name: {
-      type: String,
-      enum: ['user', 'moderator', 'admin', 'super_admin'],
-      required: true
-    },
-    level: {
-      type: Number,
-      required: true,
-      min: 0,
-      max: 10,
-      default: function() {
-        const levelMap = {
-          'user': 0,
-          'moderator': 1,
-          'admin': 2,
-          'super_admin': 3
-        };
-        return levelMap[this.role.name];
+    role: {
+      name: {
+        type: String,
+        enum: ['user', 'moderator', 'admin', 'super_admin'],
+        required: true
+      },
+      level: {
+        type: Number,
+        required: true,
+        min: 0,
+        max: 10,
+        default: function() {
+          const levelMap = {
+            'user': 0,
+            'moderator': 1,
+            'admin': 2,
+            'super_admin': 3
+          };
+          return levelMap[this.role.name];
+        }
       }
-    }
-  },
+    },
     condition: {
       type: String,
       enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom', 'higher_level', 'lower_level', 'same_level'],
       default: 'any'
     },
-    // Custom condition logic (stored as string to be eval'ed safely)
     customCondition: String
   }],
   
@@ -98,7 +131,7 @@ const permissionFieldSchema = new mongoose.Schema({
     customCondition: String
   }],
   
-  // Validation rules
+  // Validation rules (unchanged)
   validation: {
     required: {
       type: Boolean,
@@ -109,28 +142,25 @@ const permissionFieldSchema = new mongoose.Schema({
     minLength: Number,
     maxLength: Number,
     
-    min: Number, // For numbers
-    max: Number, // For numbers
+    min: Number,
+    max: Number,
     
-    pattern: String, // Regex pattern
+    pattern: String,
     patternMessage: String,
     
-    // For select fields
     options: [{
       value: String,
       label: String,
       labelAr: String
     }],
     
-    // File-specific validation
-    fileTypes: [String], // ['image/jpeg', 'application/pdf']
-    maxFileSize: Number, // in bytes
+    fileTypes: [String],
+    maxFileSize: Number,
     
-    // Custom validation function (stored as string)
     customValidator: String
   },
   
-  // UI Configuration
+  // UI Configuration (unchanged)
   ui: {
     order: {
       type: Number,
@@ -155,7 +185,6 @@ const permissionFieldSchema = new mongoose.Schema({
     helpText: String,
     helpTextAr: String,
     
-    // Advanced UI controls
     readonly: {
       type: Boolean,
       default: false
@@ -166,7 +195,6 @@ const permissionFieldSchema = new mongoose.Schema({
       default: false
     },
     
-    // Conditional display
     dependsOn: {
       field: String,
       value: mongoose.Schema.Types.Mixed,
@@ -176,10 +204,8 @@ const permissionFieldSchema = new mongoose.Schema({
       }
     },
     
-    // CSS classes for custom styling
     className: String,
     
-    // Grid layout
     colSpan: {
       type: Number,
       min: 1,
@@ -204,8 +230,9 @@ const permissionFieldSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
-}, { _id: false }); // No _id for subdocuments
+}, { _id: false });
 
+//Operations
 const permissionOperationSchema = new mongoose.Schema({
   // Operation type
   operation: {
@@ -401,6 +428,13 @@ const permissionSchema = new mongoose.Schema({
     }],
     reason: String
   }],
+
+  status: {
+  type: String,
+  enum: ['active', 'flawed', 'archived', 'stable'],
+  default: 'active'
+},
+
   
   // Tags for organization
   tags: [String],

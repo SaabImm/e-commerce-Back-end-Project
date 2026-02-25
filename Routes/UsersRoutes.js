@@ -20,6 +20,8 @@ router.get('/role=/:role', UserController.getAllByRole);
 router.post('/', authenticate, authorizeRoles('admin'),UserController.createUser);
 
 
+router.patch('/:id', authenticate, UserController.updateUser);
+
 
 // Delete a specific user - authenticated (admin or owner check in controller)
 router.delete('/:id', authenticate, UserController.deleteUserById);
