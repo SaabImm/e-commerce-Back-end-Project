@@ -3,22 +3,22 @@ const cloudinary = require('../Config/claudinary');
 const streamifier = require('streamifier');
 const File = require('../Models/FilesModels')
 const User = require ("../Models/UsersModels")
-
+const PermissionService = require ("../Services/PermissionService")
 
 
 exports.uploadFile = async (req, res) => {
   try {
     const id = req.params.id || req.params._id
     const folder = req.body.folder || "misc";
-
+    const viewerId = req.user.id || req.user._id
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
-    
-        const user = await User.findById(id);
-        if (!user) {
-       return res.status(404).json({ message: 'User Not Found' });
-      }
+    //check for permissions
+    const canUpload = await PermissionService.canPerform(viewerId, id, "create", 'File')
+    if(!canUpload) {
+      return res.status(403).json({message: "Unauthorized!!"})
+    }
 
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder: `${folder}/${id}`},
@@ -87,6 +87,11 @@ exports.getFileById = async (req, res) => {
         message: "File not found"
       })
     }
+     const canRead = await PermissionService.canPerform(viewerId, id, "read", 'File')
+    if(!canRead) {
+      return res.status(403).json({message: "Unauthorized Operation!!"})
+    }
+    
      return res.status(201).json({
       message: 'File Found',
       file: file
@@ -124,11 +129,17 @@ exports.getFileByUser = async (req, res) => {
 exports.deleteFile = async (req, res) => {
   try {
     const { id } = req.params;
-
+    const viewerId= req.user._id
     // 1️⃣ Find file FIRST (do NOT delete yet)
     const file = await File.findById(id);
     if (!file) {
       return res.status(404).json({ message: "File not found" });
+    }
+
+    const canDelete = await PermissionService.canPerform(viewerId, file.owner._id, "delete", 'File')
+  
+    if(!canDelete) {
+      return res.status(403).json({message: "Unauthorized Operation!!"})
     }
 
     // 2️⃣ Delete from Cloudinary
@@ -221,6 +232,11 @@ exports.replaceFile = async (req, res) => {
     const newFile = req.file
     if (!newFile) {
       return res.status(400).json({ message: 'No file uploaded' });
+    }
+        const canUpload = await PermissionService.canPerform(req.user._id, oldFile.owner._id, "update", 'File')
+  
+    if(!canUpload) {
+      return res.status(403).json({message: "Unauthorized!!"})
     }
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder: `${folder}/${oldFile.owner}`},

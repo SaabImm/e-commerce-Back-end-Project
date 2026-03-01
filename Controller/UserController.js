@@ -4,18 +4,37 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const PermissionService = require('../Services/PermissionService');
 
-exports.getAllUsers= async (req,res) =>{
-   try{
-      const data = await User.find()   
-      if(!data) {res.status(404).json({message: "Users Not Found"})}
-      res.json({
-        users : data,
-        message: "data was retreived successfully"
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const viewerId = req.user._id; // l'ID du viewer est déjà un ObjectId valide
+
+    // Récupérer tous les utilisateurs (vous pourrez plus tard ajouter un filtre par tenant)
+    const allUsers = await User.find();
+
+    if (!allUsers.length) {
+      return res.status(404).json({ message: "Aucun utilisateur trouvé" });
+    }
+
+    // Vérifier pour chaque utilisateur si le viewer a le droit de lecture
+    const permissions = await Promise.all(
+      allUsers.map(async (user) => {
+        const canRead = await PermissionService.canPerform(viewerId, user._id, "read", 'User');
+        return { user, canRead };
       })
-   } 
-   catch(error){
-    res.status(500).json({message: 'Server Error', error: error})
-   }
+    );
+
+    // Ne garder que ceux pour lesquels canRead est true
+    const allowedUsers = permissions.filter(p => p.canRead).map(p => p.user);
+
+    res.json({
+      users: allowedUsers,
+      message: "Données récupérées avec succès"
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur  serveur', error });
+  }
 };
 
 exports.getUserById = async(req, res) => {
@@ -33,7 +52,7 @@ exports.getUserById = async(req, res) => {
     const targetUser = await User.findById(targetId).populate("files");
     if (!targetUser){ return res.status(404).json({ message: "User Not Found !!" });}
 
-    const canPerform = await PermissionService.canPerform(viewerId,targetId, "read")
+    const canPerform = await PermissionService.canPerform(viewerId,targetId, "read", 'User')
     if (!canPerform){
       return res.status(403).json({message : "Unauthorized!!"})
     }
@@ -59,7 +78,7 @@ exports.createUser = async (req, res) => {
     }
 
     // 2. Check create operation permission
-    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create");
+    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create",'User');
     if (!canCreate) {
       return res.status(403).json({ message: "Unauthorized operation" });
     }
@@ -112,7 +131,7 @@ exports.deleteUserById= async (req, res) => {
 
 
 //Finds the Element and delets it
-  const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete")
+  const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete", 'User')
   if (!canDelete) {
     return res.status(403).json({ message: "Opération Non autorisée!"})
   }
@@ -163,7 +182,7 @@ exports.updateUser = async (req, res) => {
       return res.status(404).json({ message: "Target User not found" });
     }
 
-    const canUpdate = await PermissionService.canPerform(viewerId, targetId, "update");
+    const canUpdate = await PermissionService.canPerform(viewerId, targetId, "update", 'User');
     if (!canUpdate) {
       return res.status(403).json({ message: "Unauthorized operation!" });
     }

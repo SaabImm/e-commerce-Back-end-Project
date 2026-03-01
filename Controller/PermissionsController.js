@@ -1,6 +1,5 @@
 // Controllers/PermissionsController.js
 const PermissionService = require('../Services/PermissionService');
-const User = require('../Models/UsersModels');
 const PermissionSchema = require('../Models/PermissionsModel');
 
 class PermissionController {
@@ -10,11 +9,11 @@ class PermissionController {
       const { userId } = req.params;
       const viewerId = req.user.id; // From JWT middleware, not body!
       const tenantId= req.user.tenantId
-      
+      const model = req.query.model
       const permissions = await PermissionService.getUserPermissions(
         viewerId,
         userId,
-        'User',
+        model,
         tenantId
       );
       console.log(permissions)
@@ -124,9 +123,8 @@ class PermissionController {
   // POST /api/permissions/check-operation
   async checkOperation(req, res) {
     try {
-      const { operation, model = 'User' } = req.body;
+      const { operation, model } = req.body;
       const targetId = req.params.userId;
-      
       const viewerId = req.user.id;
       const tenantId = req.user.tenantId;
       
@@ -161,7 +159,8 @@ class PermissionController {
     try {
       // Get user from auth middleware, not body!
       const user = req.user;
-      
+      const model = req.params.model
+      const schema = req.body
       if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
         return res.status(403).json({
           success: false,
@@ -169,7 +168,7 @@ class PermissionController {
         });
       }
       
-      const results = await PermissionService.initializeDefaultSchemas(user._id);
+      const results = await PermissionService.initializeDefaultSchemas(user._id, model, schema);
   
       res.status(201).json({
         success: true,
@@ -294,8 +293,6 @@ class PermissionController {
     });
   }
 }
-
-
 
 //create a new Version for the schemas
   async createNewVersion(req, res) {

@@ -1,7 +1,7 @@
 // Services/PermissionService.js
 const PermissionSchema = require('../Models/PermissionsModel');
 const User = require('../Models/UsersModels');
-
+const File = require('../Models/FilesModels')
 class PermissionService {
   constructor() {
     // We'll get models directly when needed to avoid circular deps
@@ -18,12 +18,11 @@ class PermissionService {
   return levels[roleName] || 0;
 }
   // Get permissions for a specific user and model
-  async getUserPermissions(viewerId, targetId, model = 'User', tenantId = null) {
+  async getUserPermissions(viewerId, targetId, model, tenantId = null) {
     try {
       // Get viewer and target users
       const viewer = await User.findById(viewerId);
       const target = await User.findById(targetId);
-      
       if (!viewer || !target) {
         throw new Error('Viewer or target user not found');
       }
@@ -160,13 +159,13 @@ class PermissionService {
   }
 
   // Check if user can perform a specific operation
-  async canPerform(viewerId, targetId, operation, model = 'User', tenantId = null) {
+  async canPerform(viewerId, targetId, operation, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
     return permissions.operations[operation] || false;
   }
 
   // Get fields user can edit with configurations
-  async getEditableFields(viewerId, targetId, model = 'User', tenantId = null) {
+  async getEditableFields(viewerId, targetId, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
     
     return {
@@ -176,7 +175,7 @@ class PermissionService {
     };
   }
 
-    async getViewableFields(viewerId, targetId, model = 'User', tenantId = null) {
+    async getViewableFields(viewerId, targetId, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
     return {
       fields: permissions.canView,
@@ -186,7 +185,7 @@ class PermissionService {
   }
 
 
-    async getCreatableFields(viewerId, targetId, model = 'User', tenantId = null) {
+    async getCreatableFields(viewerId, targetId, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
    
     return {
@@ -197,342 +196,42 @@ class PermissionService {
   }
 
   // Initialize default permission schemas
-  async initializeDefaultSchemas(createdBy = null) {
-  const updatedSchemas = {
-    User: {
-      model: 'User',
-      version: 1,
-      isActive: true,
-      activatedAt: new Date(),
-      tenantId: null,
-      createdBy,
-      updatedBy: createdBy,
-      fields: [
-        {
-          name: 'name',
-          label: 'Nom',
-          editableBy: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level'  // Admin can edit users with lower level
-            }
-          ],
-          visibleTo: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          type: 'text',
-          validation: { 
-            required: true, 
-            requiredMessage: 'Le nom est requis',
-            minLength: 2, 
-            maxLength: 50 
-          },
-          ui: { 
-            order: 1, 
-            group: 'personal_info',
-            groupLabel: 'Informations Personnelles',
-            placeholder: 'Votre nom',
-            colSpan: 6 
-          }
-        },
-        {
-          name: 'lastname',
-          label: 'Prénom',
-          editableBy: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          visibleTo: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          type: 'text',
-          validation: { 
-            required: true, 
-            requiredMessage: 'Le prénom est requis',
-            minLength: 2, 
-            maxLength: 50 
-          },
-          ui: { 
-            order: 2, 
-            group: 'personal_info',
-            placeholder: 'Votre prénom',
-            colSpan: 6 
-          }
-        },
-        {
-          name: 'email',
-          label: 'Adresse Email',
-          editableBy: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          visibleTo: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          type: 'email',
-          validation: { 
-            required: true,
-            requiredMessage: 'L\'email est requis',
-            pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$',
-            patternMessage: 'Veuillez entrer une adresse email valide'
-          },
-          ui: { 
-            order: 3, 
-            group: 'personal_info',
-            placeholder: 'email@exemple.com',
-            helpText: 'Cette adresse sera utilisée pour la connexion',
-            colSpan: 12 
-          }
-        },
-        {
-          name: 'role',
-          label: 'Rôle',
-          editableBy: [
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level'  // Admin can edit roles of users with lower level
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ],
-          visibleTo: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ],
-          type: 'select',
-          validation: { 
-            required: true,
-            requiredMessage: 'Le rôle est requis',
-            options: [
-              { value: 'user', label: 'Utilisateur' },
-              { value: 'admin', label: 'Administrateur' },
-              { value: 'super_admin', label: 'Super Admin' }
-            ]
-          },
-          ui: { 
-            order: 10, 
-            group: 'security',
-            groupLabel: 'Sécurité et Rôles',
-            colSpan: 6 
-          }
-        },
-        {
-          name: 'profilePicture',
-          label: 'Photo de Profil',
-          editableBy: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          visibleTo: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            }
-          ],
-          type: 'image',
-          validation: {
-            fileTypes: ['image/jpeg', 'image/png', 'image/gif'],
-            maxFileSize: 5242880
-          },
-          ui: { 
-            order: 0, 
-            group: 'personal_info',
-            colSpan: 12 
-          }
-        }
-      ],
-      operations: [
-        {
-          operation: 'create',
-          allowed: [
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level'  // Admin can create users with lower level
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ]
-        },
-        {
-          operation: 'read',
-          allowed: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ]
-        },
-        {
-          operation: 'update',
-          allowed: [
-            { 
-              role: { name: 'user', level: 0 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            },
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'self' 
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ]
-        },
-        {
-          operation: 'delete',
-          allowed: [
-            { 
-              role: { name: 'admin', level: 2 },
-              condition: 'lower_level' 
-            },
-            { 
-              role: { name: 'super_admin', level: 3 },
-              condition: 'any' 
-            }
-          ]
-        }
-      ]
-    }
+async initializeDefaultSchemas(createdBy = null, model, schemaDefinition) {
+  // schemaDefinition doit contenir les champs et opérations pour ce modèle
+  const newSchema = {
+    model: model,
+    version: 1,
+    isActive: true,
+    activatedAt: new Date(),
+    tenantId: null,
+    createdBy,
+    updatedBy: createdBy,
+    fields: schemaDefinition.fields || [],
+    operations: schemaDefinition.operations || []
   };
 
   const results = { created: [], errors: [] };
-  
-  for (const [model, schema] of Object.entries(updatedSchemas)) {
-    try {
-      const exists = await PermissionSchema.findOne({ 
-        model,
-        tenantId: null,
-        isActive: true 
-      });
-      
-      if (!exists) {
-        const created = await PermissionSchema.create(schema);
-        results.created.push({ model, id: created._id });
-        console.log(`✅ Created default permission schema for ${model}:`, created._id);
-      } else {
-        results.created.push({ model, id: exists._id, message: 'Already exists' });
-        console.log(`ℹ️ Schema for ${model} already exists:`, exists._id);
-      }
-    } catch (error) {
-      results.errors.push({ model, error: error.message });
-      console.error(`❌ Error creating schema for ${model}:`, error.message);
+
+  try {
+    const exists = await PermissionSchema.findOne({ 
+      model,
+      tenantId: null,
+      isActive: true 
+    });
+    console.log(exists)
+    if (!exists) {
+      const created = await PermissionSchema.create(newSchema);
+      results.created.push({ model, id: created._id });
+      console.log(`✅ Created default permission schema for ${model}:`, created._id);
+    } else {
+      results.created.push({ model, id: exists._id, message: 'Already exists' });
+      console.log(`ℹ️ Schema for ${model} already exists:`, exists._id);
     }
+  } catch (error) {
+    results.errors.push({ model, error: error.message });
+    console.error(`❌ Error creating schema for ${model}:`, error.message);
   }
-  
+
   return results;
 }
 

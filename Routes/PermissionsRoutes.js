@@ -23,7 +23,7 @@ router.post('/:userId/check-operation', PermissionController.checkOperation);
 
 // ===== ADMIN-ONLY ROUTES =====
 // Initialize default permission schemas (admin only)
-router.post('/initialize', PermissionController.initializeDefaults);
+router.post('/initialize/:model', PermissionController.initializeDefaults);
 
 router.post('/versions', PermissionController.createNewVersion)
 
