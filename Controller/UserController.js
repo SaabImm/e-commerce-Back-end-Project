@@ -84,7 +84,7 @@ exports.createUser = async (req, res) => {
     }
 
     // 3. Get creatable fields for this viewer (based on their role/tenant)
-    const creatable = await PermissionService.getCreatableFields(viewerId, viewerId);
+    const creatable = await PermissionService.getCreatableFields(viewerId, viewerId, 'User');
     const allowedFields = creatable.fields; // array of field names
 
     // 4. Build user data using only allowed fields
@@ -99,13 +99,24 @@ exports.createUser = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     userData.password = hashedPassword;
 
-    // 6. Check for duplicate email (if email is being set)
+    // 6. 
+    // Check for duplicate email (if email is being set)
     if (userData.email) {
-      const existing = await User.findOne({ email: userData.email });
-      if (existing) {
+      const existingEmail = await User.findOne({ email: userData.email });
+      if (existingEmail) {
         return res.status(409).json({ message: "Email already exists" });
       }
     }
+
+    // Check for duplicate regNumber 
+    if (userData.registrationNumber) {
+      const existingRegnbr = await User.findOne({ registrationNumber: userData.registrationNumber });
+      if (existingRegnbr) {
+        return res.status(409).json({ message: "Registration Number Already already exists" });
+      }
+    }
+
+    userData.createdBy = viewerId;
 
     // 7. Create and save the user
     const newUser = new User(userData);
@@ -170,7 +181,7 @@ exports.deleteAllUsers= async (req, res) =>{
 exports.updateUser = async (req, res) => {
   try {
     const targetId = req.params.id;
-    const viewerId = req.user._id; // safer
+    const viewerId = req.user._id; 
 
     const viewer = await User.findById(viewerId).select("+password");
     if (!viewer) {
@@ -197,7 +208,7 @@ exports.updateUser = async (req, res) => {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    const editableFields = await PermissionService.getEditableFields(viewerId, targetId);
+    const editableFields = await PermissionService.getEditableFields(viewerId, targetId, 'User');
     const allowedFields = editableFields.permissions.canUpdate;
 
     if (allowedFields.length === 0) {
@@ -209,7 +220,7 @@ exports.updateUser = async (req, res) => {
         targetUser[field] = updates[field];
       }
     });
-
+    targetUser.updatedBy= viewerId;
     const updatedUser = await targetUser.save();
 
     const token = jwt.sign(
@@ -229,31 +240,71 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-exports.resetPassword = async (req, res) =>{
-  try{
+exports.resetPassword = async (req, res) => {
+  try {
     const { id } = req.params;
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
+    const viewerId = req.user.id || req.user._id;
+    const { currentPassword, newPassword } = req.body;
+
+    // Validation de l'ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID invalide" });
     }
 
-    const user = await User.findById(id).select("+password");
-    const data = req.body;
-    const isMatch = await bcrypt.compare(data.currentPassword, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Entered password doesn't match ur current one" });
-    
-    const hashedPassword = await bcrypt.hash(data.newPassword, 10);
-    const updatedUser = await User.findByIdAndUpdate(id, { password: hashedPassword }, { new: true });
+    // Vérification des permissions
+    const canUpdate = await PermissionService.canPerform(viewerId, id, "update", 'User');
+    if (!canUpdate) {
+      return res.status(403).json({ message: "Opération non autorisée" });
+    }
 
+    // const editableFields = await PermissionService.getEditableFields(viewerId, id, 'User');
+    // if (!editableFields.permissions.canUpdate.includes("password")) {
+    //   return res.status(403).json({ message: "Vous ne pouvez pas modifier le mot de passe" });
+    // }
+
+    // Récupération de l'utilisateur (avec le mot de passe)
+    const user = await User.findById(id).select("+password");
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    // Vérification du délai depuis le dernier changement
+    if (user.passwordChangedAt) {
+      const heuresDepuis = (Date.now() - user.passwordChangedAt) / (1000 * 60 * 60);
+      if (heuresDepuis < 24) {
+        const heuresRestantes = Math.ceil(24 - heuresDepuis);
+        return res.status(429).json({
+          message: `Vous ne pouvez changer votre mot de passe qu'une fois toutes les 24 heures. Réessayez dans ${heuresRestantes} heure(s).`
+        });
+      }
+    }
+
+    // Vérification de l'ancien mot de passe
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Mot de passe actuel incorrect" });
+    }
+
+    // Hash du nouveau mot de passe
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Mise à jour de l'utilisateur
+    user.password = hashedPassword;
+    user.passwordChangedAt = new Date(); // utilisez le même nom que dans le modèle
+    await user.save();
+
+    // Réponse sans le mot de passe
+    const userResponse = user.toObject();
+    delete userResponse.password;
 
     res.status(200).json({
-      message: "Psw updated successfully!",
-      user: updatedUser,
+      message: "Mot de passe mis à jour avec succès",
+      user: userResponse
     });
-  }
-  catch(error){
-  
-  console.error(error);
-  res.status(500).json({message: 'Server Error', error: error})
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Erreur serveur", error: error.message });
   }
 };
 

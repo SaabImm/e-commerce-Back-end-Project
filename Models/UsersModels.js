@@ -30,6 +30,10 @@ const userSchema = new mongoose.Schema({
     minlength: 8
   },
   
+  passwordChangedAt: {
+    type: Date,
+    default: null
+  },
   // ===== PROFILE & VISUALS =====
   profilePicture: {
     type: String,
@@ -45,6 +49,16 @@ const userSchema = new mongoose.Schema({
   wilaya: {
     type: String,
     index: true
+  },
+
+  Region : {
+    type: String,
+    index: true
+  },
+
+  Sexe: {
+    type: String,
+    enum : ["femme", "homme"]
   },
   
   commune: String,
@@ -74,7 +88,7 @@ const userSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['pending', 'active', 'suspended', 'archived'],
-    default: 'pending',
+    default: 'active',
     index: true
   },
   

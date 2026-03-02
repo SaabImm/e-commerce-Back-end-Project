@@ -17,7 +17,7 @@ router.get('/:id', authenticate, UserController.getUserById);
 router.get('/role=/:role', UserController.getAllByRole);
 
 // Create user - requires auth (admin)
-router.post('/', authenticate, authorizeRoles('admin'),UserController.createUser);
+router.post('/', authenticate,UserController.createUser);
 
 
 router.patch('/:id', authenticate, UserController.updateUser);

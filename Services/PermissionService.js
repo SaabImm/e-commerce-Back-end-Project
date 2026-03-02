@@ -49,7 +49,7 @@ class PermissionService {
   }
 
   // Calculate permissions based on schema
-  calculatePermissions(permissionDoc, viewer, target, tenantId) {
+  calculatePermissions(permissionDoc, viewer, target, tenantId=null) {
 
     const viewerLevel = this.getLevel(viewer.role);
     const targetLevel = this.getLevel(target.role);
