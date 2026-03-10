@@ -23,6 +23,7 @@ class PermissionService {
       // Get viewer and target users
       const viewer = await User.findById(viewerId);
       const target = await User.findById(targetId);
+      
       if (!viewer || !target) {
         throw new Error('Viewer or target user not found');
       }

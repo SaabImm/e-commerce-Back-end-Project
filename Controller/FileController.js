@@ -51,7 +51,7 @@ exports.uploadFile = async (req, res) => {
             id,
             { $push: { files: savedFile._id } },
             { new: true }
-          ).populate("files");
+          ).populate("files").populate("fees");
           return res.status(201).json({
             message: 'File uploaded successfully',
             file: savedFile,
@@ -137,11 +137,10 @@ exports.deleteFile = async (req, res) => {
     }
 
     const canDelete = await PermissionService.canPerform(viewerId, file.owner._id, "delete", 'File')
-  
+    
     if(!canDelete) {
       return res.status(403).json({message: "Unauthorized Operation!!"})
     }
-
     // 2️⃣ Delete from Cloudinary
     const cloudRes = await cloudinary.uploader.destroy(file.fileId);
 
@@ -156,7 +155,7 @@ exports.deleteFile = async (req, res) => {
         file.owner,
         { $pull: { files: file._id } },
         { new: true }
-      ).populate("files");
+      ).populate("files").populate("fees");
 
     // 3️⃣ Delete from DB only after Cloudinary succeeds
     await File.findByIdAndDelete(id);
@@ -280,7 +279,7 @@ exports.replaceFile = async (req, res) => {
           { $set: { "files.$": savedFile._id } }
         );
 
-        const updatedUser = await User.findById(oldFile.owner).populate("files");
+        const updatedUser = await User.findById(oldFile.owner).populate("files").populate("fees");
 
         //delete from db
         await File.findByIdAndDelete(id);

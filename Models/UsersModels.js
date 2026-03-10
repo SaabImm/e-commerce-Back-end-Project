@@ -148,6 +148,12 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'File' 
   }],
+
+   // ===== Fees and due Dates =====
+  fees: [{ 
+  type: mongoose.Schema.Types.ObjectId, 
+  ref: 'Cotisation' 
+}],
   
   // ===== PREFERENCES & SETTINGS =====
   preferences: {

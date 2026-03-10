@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const UserController = require("../Controller/UserController");
-const authorizeRoles= require("../Middleware/AuthorizeRole");
+
 const authenticate= require("../Middleware/Authenticate")
 const userOwnership = require("../Middleware/UserOwnership")
 
@@ -11,7 +11,11 @@ const userOwnership = require("../Middleware/UserOwnership")
 
 
 // Get user by ID - authenticated
+
+router.get('/stats', authenticate, UserController.getUserStats);
+
 router.get('/:id', authenticate, UserController.getUserById);
+
 
 // Only admin can get users by role
 router.get('/role=/:role', UserController.getAllByRole);

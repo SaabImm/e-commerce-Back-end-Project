@@ -2,6 +2,7 @@ const User = require("../Models/UsersModels");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const sendVerificationEmail = require("../Middleware/sendEmail")
+const Cotisation = require('../Models/FeesModel');
 
 exports.login = async (req, res) => {
   try {
@@ -12,7 +13,7 @@ exports.login = async (req, res) => {
     }
 
     // Trouver l'utilisateur
-    const user = await User.findOne({ email }).select("+password").populate("files");
+    const user = await User.findOne({ email }).select("+password").populate("files").populate("fees");
     if (!user) {
       return res.status(401).json({ message: "Unfound user, try another email" });
     }
@@ -121,40 +122,39 @@ exports.logout = async (req, res) => {
 };
 
 
-
 exports.signup = async (req, res) => {
   try {
-    const { name, lastname, email, password, dateOfBirth, sexe, registrationNumber} = req.body;
+    const { name, lastname, email, password, dateOfBirth, sexe, registrationNumber } = req.body;
 
-    // 1️⃣ Check required fields
+    // Vérifier les champs obligatoires
     if (!name || !lastname || !email || !password) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // Validate email format
+    // Valider le format de l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ message: "Please enter a valid email address" });
     }
 
-    // 2️⃣ Check if email already exists
+    // Vérifier si l'email existe déjà
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ message: "Email already in use" });
     }
 
-    //Check if Registration Number  already exists
-
-    const exists = await User.findOne({ registrationNumber });
-    if (exists) {
-      return res.status(409).json({ message: "Registration number in use" });
+    // Vérifier si le numéro d'inscription existe déjà (s'il est fourni)
+    if (registrationNumber) {
+      const existingReg = await User.findOne({ registrationNumber });
+      if (existingReg) {
+        return res.status(409).json({ message: "Registration number already in use" });
+      }
     }
 
-
-    // 3️⃣ Hash the password
+    // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4️⃣ Build user data
+    // Préparer les données utilisateur
     const userData = {
       name,
       lastname,
@@ -164,25 +164,48 @@ exports.signup = async (req, res) => {
       sexe,
       registrationNumber
     };
-    // Add dateOfBirth only if provided
     if (dateOfBirth) {
       userData.dateOfBirth = dateOfBirth;
     }
 
+    // Créer l'utilisateur
     const newUser = new User(userData);
     const savedUser = await newUser.save();
 
-    // 5️⃣ Generate verification token
+    // --- Création automatique de la cotisation pour l'année en cours ---
+    const currentYear = new Date().getFullYear();
+    const defaultAmount = process.env.DEFAULT_COTISATION_AMOUNT || 5000; // montant par défaut, modifiable via .env
+    const dueDate = new Date(currentYear, 3, 31); // 31 décembre de l'année en cours
+
+    const cotisation = new Cotisation({
+      user: savedUser._id,
+      year: currentYear,
+      amount: defaultAmount,
+      dueDate: dueDate,
+      status: 'pending',
+      notes: 'Cotisation automatique à l\'inscription',
+      createdBy: savedUser._id
+    });
+
+    await cotisation.save();
+
+    // Lier la cotisation à l'utilisateur
+    savedUser.fees = savedUser.fees || [];
+    savedUser.fees.push(cotisation._id);
+    await savedUser.save();
+    // --- Fin de la création de la cotisation ---
+
+    // Générer le token de vérification
     const token = jwt.sign(
       { id: savedUser._id, role: savedUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
 
-    // 6️⃣ Send verification email
+    // Envoyer l'email de vérification
     await sendVerificationEmail(savedUser.email, token);
 
-    // 7️⃣ Respond
+    // Réponse
     res.status(201).json({
       token,
       message: "Email sent, please verify your inbox!",
@@ -194,4 +217,5 @@ exports.signup = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
+
 

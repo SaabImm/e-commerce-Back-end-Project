@@ -33,6 +33,7 @@ const usersRouter = require('./Routes/UsersRoutes')
 const AuthRoutes = require('./Routes/AuthRoutes')
 const UploadRoutes = require('./Routes/UploadRoutes')
 const AdminRoutes = require('./Routes/AdminRoutes')
+const FeeRoutes = require('./Routes/FeeRoutes')
 const PermissionRoutes = require('./Routes/PermissionsRoutes')
 //define routes
 
@@ -40,9 +41,11 @@ app.use("/user", usersRouter);
 app.use("/auth", AuthRoutes);
 app.use("/upload", UploadRoutes);
 app.use("/admin", AdminRoutes);
+app.use("/fee", FeeRoutes);
 
 //config Routes
 app.use("/permissions", PermissionRoutes);
+
 
 //MongoDB connection
 const mongoose = require('mongoose');
@@ -54,4 +57,4 @@ mongoose.connect(process.env.MONGO_URL)
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-});
+})

@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 const User = require('../Models/UsersModels')
+const cloudinary = require('../Config/claudinary');
+const File = require('../Models/FilesModels')
+const Cotisation = require ('../Models/FeesModel') 
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const PermissionService = require('../Services/PermissionService');
@@ -39,7 +42,6 @@ exports.getAllUsers = async (req, res) => {
 
 exports.getUserById = async(req, res) => {
   try {
-    //convert to number
     const targetId = req.params.id; 
     const viewerId = req.user.id;
 
@@ -49,7 +51,7 @@ exports.getUserById = async(req, res) => {
     }
 
     //finds the product if it exists
-    const targetUser = await User.findById(targetId).populate("files");
+    const targetUser = await User.findById(targetId).populate("files").populate("fees");
     if (!targetUser){ return res.status(404).json({ message: "User Not Found !!" });}
 
     const canPerform = await PermissionService.canPerform(viewerId,targetId, "read", 'User')
@@ -131,38 +133,60 @@ exports.createUser = async (req, res) => {
     return res.status(500).json({ message: 'Server error' });
   }
 };
-exports.deleteUserById= async (req, res) => {
-  try{
-// verifies if it's anything but a number
-    const targetId = req.params.id
-    const viewerId = req.user.id
-  if (!mongoose.isValidObjectId(targetId)) { 
-    return res.status(400).json({ message: "Invalid ID format / Bad Request " });
-  }
+exports.deleteUserById = async (req, res) => {
+  try {
+    const targetId = req.params.id;
+    const viewerId = req.user.id;
 
+    // Vérifier la validité de l'ID
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ message: "Format d'ID invalide" });
+    }
 
-//Finds the Element and delets it
-  const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete", 'User')
-  if (!canDelete) {
-    return res.status(403).json({ message: "Opération Non autorisée!"})
-  }
+    // Vérifier la permission de suppression sur l'utilisateur
+    const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete", 'User');
+    if (!canDelete) {
+      return res.status(403).json({ message: "Opération non autorisée !" });
+    }
 
-    const deletedUser = await User.findByIdAndDelete(targetId);
-      if (!deletedUser) {
-    return res.status(404).json({ message: "Utilisateur Non trouvé" });
-  }
+    // Récupérer l'utilisateur avec ses fichiers (pour obtenir les fileIds Cloudinary)
+    const user = await User.findById(targetId).populate('files');
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur non trouvé" });
+    }
+
+    // 1. Supprimer les fichiers de Cloudinary et de la base de données
+    if (user.files && user.files.length > 0) {
+      for (const file of user.files) {
+        // Supprimer de Cloudinary si le fichier a un fileId
+        if (file.fileId) {
+          try {
+            await cloudinary.uploader.destroy(file.fileId);
+          } catch (cloudErr) {
+            console.error(`Erreur lors de la suppression du fichier ${file.fileId} de Cloudinary:`, cloudErr);
+            // On continue, on ne bloque pas la suppression complète
+          }
+        }
+        // Supprimer le document File de la base
+        await File.findByIdAndDelete(file._id);
+      }
+    }
+
+    // 2. Supprimer toutes les cotisations associées à cet utilisateur
+    await Cotisation.deleteMany({ user: targetId });
+
+    // 3. Enfin, supprimer l'utilisateur lui-même
+    await User.findByIdAndDelete(targetId);
+
     res.status(200).json({
-    message: `Utilisateur ${deletedUser.email} a été supprimé`,
-    user:  deletedUser
-  })
- }
- catch(err) {
-    res.status(500).json({ error: err });
-    console.log(err)
-}
+      message: `Utilisateur ${user.email} et toutes ses données associées ont été supprimés`,
+    });
 
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 };
-
 exports.deleteAllUsers= async (req, res) =>{
   try{
     //this will also verify roles later
@@ -387,5 +411,82 @@ exports.validateUser = async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server Error", error });
+  }
+};
+
+
+exports.getUserStats = async (req, res) => {
+  try {
+    // Restrict to admin/super_admin (or use your permission service)
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({ message: 'Accès non autorisé' });
+    }
+
+    // Total users
+    const totalUsers = await User.countDocuments();
+
+    // Users by role
+    const byRole = await User.aggregate([
+      { $group: { _id: '$role', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Users by wilaya
+    const byWilaya = await User.aggregate([
+      { $match: { wilaya: { $ne: null } } },
+      { $group: { _id: '$wilaya', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Users by profession
+    const byProfession = await User.aggregate([
+      { $match: { profession: { $ne: null } } },
+      { $group: { _id: '$profession', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Users by verification status
+    const byVerification = await User.aggregate([
+      {
+        $group: {
+          _id: null,
+          verified: { $sum: { $cond: ['$isVerified', 1, 0] } },
+          notVerified: { $sum: { $cond: ['$isVerified', 0, 1] } },
+          adminVerified: { $sum: { $cond: ['$isAdminVerified', 1, 0] } },
+          notAdminVerified: { $sum: { $cond: ['$isAdminVerified', 0, 1] } }
+        }
+      }
+    ]);
+
+    // Users by account status
+    const byStatus = await User.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+
+    // New users in last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const newUsers = await User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
+
+    // Gender distribution (if field exists)
+    const bySexe = await User.aggregate([
+      { $match: { Sexe: { $ne: null } } },
+      { $group: { _id: '$Sexe', count: { $sum: 1 } } }
+    ]);
+
+    res.json({
+      success: true,
+      totalUsers,
+      byRole,
+      byWilaya,
+      byProfession,
+      byVerification: byVerification[0] || { verified: 0, notVerified: 0, adminVerified: 0, notAdminVerified: 0 },
+      byStatus,
+      newUsers,
+      bySexe
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 };

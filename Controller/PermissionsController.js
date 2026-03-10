@@ -43,11 +43,11 @@ class PermissionController {
       const { userId } = req.params;
       const viewerId = req.user.id;
       const tenantId = req.user.tenantId;
-      
+          const {model} = req.query
       const editableFields = await PermissionService.getEditableFields(
         viewerId,
         userId,
-        'User',
+        model,
         tenantId
       );
       
@@ -70,11 +70,11 @@ class PermissionController {
     const { userId } = req.params;
     const viewerId = req.user.id;
     const tenantId = req.user.tenantId;
-    
+    const {model} = req.query
     const viewableFields = await PermissionService.getViewableFields(
       viewerId,
       userId,
-      'User',
+      model,
       tenantId
     );
     
@@ -98,11 +98,12 @@ class PermissionController {
       const { userId } = req.params;
       const viewerId = req.user.id;
       const tenantId = req.user.tenantId;
+      const {model} = req.query
       
       const creatableFields = await PermissionService.getCreatableFields(
         viewerId,
         userId,
-        'User',
+        model,
         tenantId
       );
       

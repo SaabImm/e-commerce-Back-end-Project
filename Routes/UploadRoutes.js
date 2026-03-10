@@ -14,7 +14,7 @@ router.post('/:id', authenticate , upload.single('file'), fileTypeFilter('jpg',"
 router.patch('/:id', authenticate, upload.single('file'), FileSizeLimit(5), FileController.replaceFile);
 
 //file id
-router.delete('/:id', authenticate, FileOwnership(false), authorizeRoles("admin"), FileController.deleteFile);
+router.delete('/:id', authenticate, FileOwnership(false), authorizeRoles("super_admin"), FileController.deleteFile);
 router.delete('/all/:id', authenticate, FileController.clearUserFiles);
 router.get('/:id', FileController.getFileById);
 module.exports = router;
