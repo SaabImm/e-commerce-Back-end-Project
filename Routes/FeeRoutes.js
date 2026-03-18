@@ -15,8 +15,15 @@ router.get('/user/:userId', CotisationController.getUserCotisations);
 
 
 router.post('/', CotisationController.createCotisation);
-router.post('/bulk-create', authenticate, CotisationController.bulkCreateCotisations);
+router.post('/bulk-create', CotisationController.bulkCreateCotisations);
 router.patch('/:id', CotisationController.updateCotisation);
-router.delete('/:id', CotisationController.deleteCotisation);
+router.patch('/pay/:id', CotisationController.payCotisation);
+router.delete('/:id', CotisationController.cancelCotisation);
+
+//super admin only
+router.delete('/super-admin/all', CotisationController.deleteAllCotisations);
+router.delete('/:id/delete', CotisationController.deleteCotisation);
+
+
 
 module.exports = router;

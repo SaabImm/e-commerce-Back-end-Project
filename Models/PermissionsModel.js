@@ -61,7 +61,7 @@ const permissionFieldSchema = new mongoose.Schema({
     },
     condition: {
       type: String,
-      enum: ['any', 'same_tenant', 'custom', 'self'],
+      enum: ['self', 'any', 'same_tenant', 'tenant_admin', 'custom', 'higher_level', 'lower_level', 'same_level'],
       default: 'any'
     },
     customCondition: String

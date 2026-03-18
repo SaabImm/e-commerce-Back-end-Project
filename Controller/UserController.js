@@ -13,7 +13,7 @@ exports.getAllUsers = async (req, res) => {
     const viewerId = req.user._id; // l'ID du viewer est déjà un ObjectId valide
 
     // Récupérer tous les utilisateurs (vous pourrez plus tard ajouter un filtre par tenant)
-    const allUsers = await User.find();
+    const allUsers = await User.find().populate('fees');
 
     if (!allUsers.length) {
       return res.status(404).json({ message: "Aucun utilisateur trouvé" });

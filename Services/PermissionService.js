@@ -236,17 +236,17 @@ async initializeDefaultSchemas(createdBy = null, model, schemaDefinition) {
   return results;
 }
 
-  async createNewVersion(changes, changedBy, status) {
+  async createNewVersion(changes, changedBy, status, model) {
     //get the highest version doc 
       const highestVersionDoc = await PermissionSchema.findOne({ 
-    model: 'User' 
+    model: model 
   }).sort({ version: -1 });
   
   const highestVersion = highestVersionDoc ? highestVersionDoc.version : 0;
 
   // Get current active version
   const current = await PermissionSchema.findOne({ 
-    model: 'User', 
+    model: model, 
     isActive: true 
   });
 
@@ -306,11 +306,12 @@ changes.operations?.forEach((changedOp) => {
 const newVersion = {
   ...current.toObject(),
   _id: undefined,
+  model: model,
   version: highestVersion + 1,
   isActive: true,
   activatedAt: new Date(),
   updatedBy: changedBy,
-  status: status,
+  status: "active",
   fields: mergedFields,
   operations: mergedOperations
 };
@@ -318,7 +319,7 @@ const newVersion = {
   
   // Deactivate old version
   current.isActive = false;
-  current.status = "archived"
+  current.status = status;
   current.deactivatedAt = new Date();
   await current.save();
   

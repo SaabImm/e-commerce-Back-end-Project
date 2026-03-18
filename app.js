@@ -35,6 +35,7 @@ const UploadRoutes = require('./Routes/UploadRoutes')
 const AdminRoutes = require('./Routes/AdminRoutes')
 const FeeRoutes = require('./Routes/FeeRoutes')
 const PermissionRoutes = require('./Routes/PermissionsRoutes')
+const PayementRoutes = require('./Routes/PayementRoutes')
 //define routes
 
 app.use("/user", usersRouter);
@@ -42,6 +43,7 @@ app.use("/auth", AuthRoutes);
 app.use("/upload", UploadRoutes);
 app.use("/admin", AdminRoutes);
 app.use("/fee", FeeRoutes);
+app.use("/payement", PayementRoutes)
 
 //config Routes
 app.use("/permissions", PermissionRoutes);

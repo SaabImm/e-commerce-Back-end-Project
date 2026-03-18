@@ -154,6 +154,11 @@ const userSchema = new mongoose.Schema({
   type: mongoose.Schema.Types.ObjectId, 
   ref: 'Cotisation' 
 }],
+  credit: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   
   // ===== PREFERENCES & SETTINGS =====
   preferences: {
@@ -202,6 +207,14 @@ userSchema.virtual('fullName').get(function() {
   return `${this.name} ${this.lastname}`;
 });
 
+userSchema.virtual('totalDebt').get(function() {
+  if (!this.fees || !Array.isArray(this.fees)) return 0;
+  return this.fees.reduce((sum, fee) => {
+    const totalDue = (fee.amount || 0) + (fee.penalty || 0);
+    const paid = fee.paidAmount || 0;
+    return sum + Math.max(0, totalDue - paid);
+  }, 0);
+});
 userSchema.virtual('isLocked').get(function() {
   return this.lockUntil && this.lockUntil > Date.now();
 });

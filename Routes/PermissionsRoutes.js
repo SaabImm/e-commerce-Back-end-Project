@@ -25,7 +25,7 @@ router.post('/:userId/check-operation', PermissionController.checkOperation);
 // Initialize default permission schemas (admin only)
 router.post('/initialize/:model', PermissionController.initializeDefaults);
 
-router.post('/versions', PermissionController.createNewVersion)
+router.post('/versions/:model', PermissionController.createNewVersion)
 
 // List all permission schemas (admin only)
 router.get('/schemas', PermissionController.listSchemas);

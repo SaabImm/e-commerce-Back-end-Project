@@ -299,11 +299,12 @@ class PermissionController {
   async createNewVersion(req, res) {
   try {
     const user = req.user;
+    const model= req.params.model;
     const newSchemaData = req.body.schema; // Send the new field/operation definitions
     const status = req.body.status
     
     // Just pass the changes, let service handle version logic
-    const result = await PermissionService.createNewVersion(newSchemaData, user._id, status);
+    const result = await PermissionService.createNewVersion(newSchemaData, user._id, status, model);
     
     res.status(200).json({ success: true, result });
   } catch (error) {
