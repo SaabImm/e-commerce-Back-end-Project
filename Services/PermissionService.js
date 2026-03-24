@@ -176,7 +176,7 @@ class PermissionService {
     };
   }
 
-    async getViewableFields(viewerId, targetId, model, tenantId = null) {
+  async getViewableFields(viewerId, targetId, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
     return {
       fields: permissions.canView,
@@ -186,7 +186,7 @@ class PermissionService {
   }
 
 
-    async getCreatableFields(viewerId, targetId, model, tenantId = null) {
+  async getCreatableFields(viewerId, targetId, model, tenantId = null) {
     const permissions = await this.getUserPermissions(viewerId, targetId, model, tenantId);
    
     return {
@@ -197,45 +197,46 @@ class PermissionService {
   }
 
   // Initialize default permission schemas
-async initializeDefaultSchemas(createdBy = null, model, schemaDefinition) {
-  // schemaDefinition doit contenir les champs et opérations pour ce modèle
-  const newSchema = {
-    model: model,
-    version: 1,
-    isActive: true,
-    activatedAt: new Date(),
-    tenantId: null,
-    createdBy,
-    updatedBy: createdBy,
-    fields: schemaDefinition.fields || [],
-    operations: schemaDefinition.operations || []
-  };
-
-  const results = { created: [], errors: [] };
-
-  try {
-    const exists = await PermissionSchema.findOne({ 
-      model,
+  async initializeDefaultSchemas(createdBy = null, model, schemaDefinition) {
+    // schemaDefinition doit contenir les champs et opérations pour ce modèle
+    const newSchema = {
+      model: model,
+      version: 1,
+      isActive: true,
+      activatedAt: new Date(),
       tenantId: null,
-      isActive: true 
-    });
-    console.log(exists)
-    if (!exists) {
-      const created = await PermissionSchema.create(newSchema);
-      results.created.push({ model, id: created._id });
-      console.log(`✅ Created default permission schema for ${model}:`, created._id);
-    } else {
-      results.created.push({ model, id: exists._id, message: 'Already exists' });
-      console.log(`ℹ️ Schema for ${model} already exists:`, exists._id);
+      createdBy,
+      updatedBy: createdBy,
+      fields: schemaDefinition.fields || [],
+      operations: schemaDefinition.operations || []
+    };
+
+    const results = { created: [], errors: [] };
+
+    try {
+      const exists = await PermissionSchema.findOne({ 
+        model,
+        tenantId: null,
+        isActive: true 
+      });
+      console.log(exists)
+      if (!exists) {
+        const created = await PermissionSchema.create(newSchema);
+        results.created.push({ model, id: created._id });
+        console.log(`✅ Created default permission schema for ${model}:`, created._id);
+      } else {
+        results.created.push({ model, id: exists._id, message: 'Already exists' });
+        console.log(`ℹ️ Schema for ${model} already exists:`, exists._id);
+      }
+    } catch (error) {
+      results.errors.push({ model, error: error.message });
+      console.error(`❌ Error creating schema for ${model}:`, error.message);
     }
-  } catch (error) {
-    results.errors.push({ model, error: error.message });
-    console.error(`❌ Error creating schema for ${model}:`, error.message);
+
+    return results;
   }
 
-  return results;
-}
-
+  //create a new version from old version merdged with new changes
   async createNewVersion(changes, changedBy, status, model) {
     //get the highest version doc 
       const highestVersionDoc = await PermissionSchema.findOne({ 
@@ -319,15 +320,48 @@ const newVersion = {
   
   // Deactivate old version
   current.isActive = false;
-  current.status = status;
+  current.status = status || "archived";
   current.deactivatedAt = new Date();
   await current.save();
   
   // Save new version
   return PermissionSchema.create(newVersion);
+  }
+
+  //update an inactive version
+async updateVersion(versionId, updates, userId) {
+  const version = await PermissionSchema.findById(versionId);
+  if (!version) throw new Error('Version non trouvée');
+
+  // Prevent editing active version
+  if (version.isActive) {
+    throw new Error('Impossible de modifier une version active. Créez une nouvelle version.');
+  }
+
+  // Apply changes (only allowed fields)
+  if (updates.fields !== undefined) version.fields = updates.fields;
+  if (updates.operations !== undefined) version.operations = updates.operations;
+  if (updates.status !== undefined) version.status = updates.status;
+  // Add other fields if needed (e.g., modelVersion)
+
+  // Log the change
+  version.changeLog.push({
+    version: version.version,
+    changedAt: new Date(),
+    changedBy: userId,
+    changes: [{
+      field: 'schema',
+      oldValue: 'previous',
+      newValue: 'updated'
+    }],
+    reason: updates.reason || 'Mise à jour manuelle'
+  });
+
+  version.updatedBy = userId;
+  await version.save();
+
+  return version;
 }
-
-
 
 }
 

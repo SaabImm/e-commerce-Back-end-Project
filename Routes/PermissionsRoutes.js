@@ -4,7 +4,7 @@ const PermissionController = require('../Controller/PermissionsController')
 const authenticate = require ('../Middleware/Authenticate')
 
 
-// ===== AUTHENTICATED ROUTES =====
+
 router.use(authenticate); // All routes below require authentication
 
 // Get permissions for a specific user
@@ -18,20 +18,32 @@ router.get('/user/:userId/crFields', PermissionController.getCreatableFields);
 
 //gerviewableFields
 router.get('/user/:userId/vwFields', PermissionController.getViewableFields);
+
 // Check if user can perform specific operation
 router.post('/:userId/check-operation', PermissionController.checkOperation);
 
-// ===== ADMIN-ONLY ROUTES =====
-// Initialize default permission schemas (admin only)
+// Initialize default permission schemas 
 router.post('/initialize/:model', PermissionController.initializeDefaults);
 
+// create new version
 router.post('/versions/:model', PermissionController.createNewVersion)
 
-// List all permission schemas (admin only)
+// List all permission schemas
 router.get('/schemas', PermissionController.listSchemas);
 
 // get Last Active Version
 router.get('/rollbackVersion', PermissionController.rollbackVersion);
+
+//reactivate version 
+router.get('/reactivateVersion/:schemaId', PermissionController.reactivateVersion);
+
+//patch inactive version
+router.patch('/versions/:versionId', PermissionController.updateVersion);
+
+
+
+
+
 
 
 
