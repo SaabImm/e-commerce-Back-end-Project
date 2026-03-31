@@ -53,8 +53,8 @@ const cotisationSchema = new mongoose.Schema({
   },
   frequency: {
     type: String,
-    enum: ['once', 'monthly', 'yearly', 'semi-annual'],
-    default: 'once'
+    enum: ['none','once', 'monthly', 'yearly', 'semi-annual'],
+    default: 'none'
   },
   // Optionnel : date de dernière application (pour éviter de cumuler plusieurs fois)
   lastPenaltyDate: {
@@ -99,25 +99,29 @@ cotisationSchema.methods.calculatePenalty = function() {
 
   const now = new Date();
   const due = this.dueDate;
+  const payDate = this.paymentDate!== null ?  this.paymentDate : now
   const config = this.penaltyConfig;
 
-  // Durée écoulée en mois (approximative)
-  const monthsDiff = (now.getFullYear() - due.getFullYear()) * 12 +
-                     (now.getMonth() - due.getMonth());
+  // Calculate number of full months between due date and now
+  let monthsDiff = (payDate.getFullYear() - due.getFullYear()) * 12 + (payDate.getMonth() - due.getMonth());
+  // If the current day is before the due day, subtract one month
+  if (payDate.getDate() < due.getDate()) {
+    monthsDiff--;
+  }
+  monthsDiff = Math.max(0, monthsDiff); // Ensure non-negative
 
   let penaltyAmount = 0;
 
   switch (config.frequency) {
     case 'once':
-      // Pénalité unique, on ne l'applique qu'une fois
+      // Apply penalty only once, if not already applied
       if (!this.penalty || this.penalty === 0) {
         penaltyAmount = config.type === 'fixed' ? config.rate : this.amount * config.rate / 100;
       }
       break;
     case 'monthly':
-      // Pénalité mensuelle : nombre de mois * taux mensuel
       if (monthsDiff > 0) {
-        const periods = monthsDiff; // on pourrait aussi limiter le nombre de périodes
+        const periods = monthsDiff;
         if (config.type === 'fixed') {
           penaltyAmount = config.rate * periods;
         } else {
@@ -126,7 +130,6 @@ cotisationSchema.methods.calculatePenalty = function() {
       }
       break;
     case 'yearly':
-      // Pénalité annuelle : nombre d'années * taux annuel
       const yearsDiff = Math.floor(monthsDiff / 12);
       if (yearsDiff > 0) {
         if (config.type === 'fixed') {
@@ -136,7 +139,18 @@ cotisationSchema.methods.calculatePenalty = function() {
         }
       }
       break;
-    // etc. pour semi-annual (6 mois)
+    case 'semi-annual':
+      const semesters = Math.floor(monthsDiff / 6);
+      if (semesters > 0) {
+        if (config.type === 'fixed') {
+          penaltyAmount = config.rate * semesters;
+        } else {
+          penaltyAmount = this.amount * (config.rate / 100) * semesters;
+        }
+      }
+      break;
+    default:
+      break;
   }
 
   return Math.round(penaltyAmount);
@@ -144,19 +158,16 @@ cotisationSchema.methods.calculatePenalty = function() {
 
 // Pre-save middleware to update status and penalty
 cotisationSchema.pre('save', function(next) {
-  if (this.isOverdue && this.status !== 'overdue') {
+  // Auto‑set status to overdue if conditions met (only if not paid/cancelled)
+  if (this.isOverdue && this.status !== 'paid' && this.status !== 'cancelled') {
     this.status = 'overdue';
   }
 
-  // Calcul de la pénalité basée sur la configuration
-  const newPenalty = this.calculatePenalty();
-  if (newPenalty !== this.penalty) {
-    this.penalty = newPenalty;
-    // Si on a appliqué une pénalité récurrente, on met à jour lastPenaltyDate
-    if (this.penaltyConfig.frequency !== 'once') {
-      this.penaltyConfig.lastPenaltyDate = new Date();
-    }
+  // Recalculate penalty only if the fee is still unpaid (pending, partial, or overdue)
+  if (this.status !== 'paid' && this.status !== 'cancelled') {
+    this.penalty = this.calculatePenalty();
   }
+  // If the fee is paid or cancelled, the penalty stays as it was (frozen)
 
   next();
 });

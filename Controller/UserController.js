@@ -3,6 +3,7 @@ const User = require('../Models/UsersModels')
 const cloudinary = require('../Config/claudinary');
 const File = require('../Models/FilesModels')
 const Cotisation = require ('../Models/FeesModel') 
+const Payment= require('../Models/PayementModel')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const PermissionService = require('../Services/PermissionService');
@@ -175,6 +176,9 @@ exports.deleteUserById = async (req, res) => {
     // 2. Supprimer toutes les cotisations associées à cet utilisateur
     await Cotisation.deleteMany({ user: targetId });
 
+    //supprimer aussi les paiements relatifs a cet utilisateur
+    await Payment.deleteMany({ user: targetId });
+    
     // 3. Enfin, supprimer l'utilisateur lui-même
     await User.findByIdAndDelete(targetId);
 

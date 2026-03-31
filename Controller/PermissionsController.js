@@ -218,84 +218,89 @@ class PermissionController {
   }
   }
   //rollback to an old version
-  async rollbackVersion(req, res) {
-    try {
-      const { 
-          targetStatus = 'archived',
-          newStatus = 'active',
-          model       
-        } = req.query;
-      if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-        return res.status(403).json({
-          success: false,
-          message: 'Non autorisé'
-        });
-      }
-      
-    // Get latest version 
-    const schema = await PermissionSchema.findForModel(model);
-
-    //get the rollback version
-    const rollback = await PermissionSchema.findOne({
-      version: schema.version-1,
-      model: model,
-      status: { $nin: ['flawed'] }
-    })
-
-    //check for existance
-    if (!rollback) {
-    return res.status(404).json({
-      success: false,
-      message: 'Version précédente non trouvée'
-    });}
-
-  
-      //desactivate the newest version and activate the rollback version
-      schema.isActive = false;
-      schema.status = targetStatus;
-      schema.deactivatedAt = new Date();
-      schema.changeLog.push({
-        version : schema.version,
-        changedAt : new Date(),
-        changedBy : req.user._id,
-        changes: [{
-          field: 'isActive',
-          oldValue: true,
-          newValue: false
-        }],
-        reason: `Rollback to version ${rollback.version}`
-      })
-
-      rollback.isActive = true;
-      rollback.status = newStatus;
-        rollback.changeLog.push({
-        version : rollback.version,
-        changedAt : new Date(),
-        changedBy : req.user._id,
-        changes: [{
-          field: 'isActive',
-          oldValue: false,
-          newValue: true
-        }],
-        reason: `Reactivated via rollback from version ${schema.version}`
-      })
-      //save changes
-      await schema.save();
-      await rollback.save();
-      console.log(schema.model, rollback.model)
-      return res.json({
-        success: true,
-        rollback
-      });
-      
-    } catch (error) {
-      console.error('List schemas error:', error);
-      res.status(500).json({
+async rollbackVersion(req, res) {
+  try {
+    const { 
+        targetStatus = 'archived',
+        newStatus = 'active',
+        model       
+      } = req.query;
+    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({
         success: false,
-        message: 'Erreur lors de la récupération des schémas'
+        message: 'Non autorisé'
       });
     }
+    
+    // Get latest active version
+    const schema = await PermissionSchema.findForModel(model);
+    if (!schema) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aucune version active trouvée'
+      });
+    }
+
+    // Get the nearest previous version that is not flawed
+    const rollback = await PermissionSchema.findOne({
+      model: model,
+      version: { $lt: schema.version },
+      status: { $nin: ['flawed'] }
+    }).sort({ version: -1 });
+
+    if (!rollback) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aucune version valide antérieure trouvée'
+      });
+    }
+
+    // Deactivate current, activate rollback
+    schema.isActive = false;
+    schema.status = targetStatus;
+    schema.deactivatedAt = new Date();
+    schema.changeLog.push({
+      version: schema.version,
+      changedAt: new Date(),
+      changedBy: req.user._id,
+      changes: [{
+        field: 'isActive',
+        oldValue: true,
+        newValue: false
+      }],
+      reason: `Rollback to version ${rollback.version}`
+    });
+
+    rollback.isActive = true;
+    rollback.status = newStatus;
+    rollback.changeLog.push({
+      version: rollback.version,
+      changedAt: new Date(),
+      changedBy: req.user._id,
+      changes: [{
+        field: 'isActive',
+        oldValue: false,
+        newValue: true
+      }],
+      reason: `Reactivated via rollback from version ${schema.version}`
+    });
+
+    await schema.save();
+    await rollback.save();
+
+    return res.json({
+      success: true,
+      rollback
+    });
+    
+  } catch (error) {
+    console.error('Rollback error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors du rollback'
+    });
   }
+}
   // Controller method for reactivating the next version (rollforward)
   async reactivateVersion(req, res) {
     try {

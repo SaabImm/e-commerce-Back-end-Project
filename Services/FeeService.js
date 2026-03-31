@@ -36,7 +36,7 @@ class FeeService {
    * @param {ObjectId} viewerId - L'utilisateur qui effectue l'opération
    * @returns {Object} { cotisation, excess, payment }
    */
-  async payCotisation(cotisation, paymentData, viewerId) {
+  async payCotisation(cotisation, paymentData) {
     const { paidAmount, paymentDate, paymentMethod, creditUsed = 0, notes } = paymentData;
     const totalDue = cotisation.amount + (cotisation.penalty || 0);
     const alreadyPaid = cotisation.paidAmount || 0;
@@ -118,5 +118,25 @@ class FeeService {
     }
     return amount - remaining;
   }
-}
+
+
+  // In FeeService.js, inside the class
+
+/**
+ * Apply generic field updates to a cotisation, only for allowed fields.
+ * Modifies the cotisation object in place.
+ * @param {Object} cotisation - The cotisation document (mongoose object)
+ * @param {Object} updates - The updates object from req.body
+ * @param {Array} allowedFields - Array of field names that are allowed to be updated
+ * @returns {Object} The modified cotisation object (same reference)
+ */
+  updateCotisationFields(cotisation, updates, allowedFields) {
+    allowedFields.forEach(field => {
+      if (updates[field] !== undefined) {
+        cotisation[field] = updates[field];
+      }
+    });
+    return cotisation;
+  }
+  }
 module.exports = new FeeService();

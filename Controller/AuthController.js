@@ -124,7 +124,7 @@ exports.logout = async (req, res) => {
 
 exports.signup = async (req, res) => {
   try {
-    const { name, lastname, email, password, dateOfBirth, sexe, registrationNumber } = req.body;
+    const { name, lastname, email, password, dateOfBirth, sexe, startDate, registrationNumber } = req.body;
 
     // Vérifier les champs obligatoires
     if (!name || !lastname || !email || !password) {
@@ -162,6 +162,7 @@ exports.signup = async (req, res) => {
       password: hashedPassword,
       role: "user",
       sexe,
+      startDate: startDate ? new Date(startDate) : new Date(),
       registrationNumber
     };
     if (dateOfBirth) {
@@ -172,28 +173,44 @@ exports.signup = async (req, res) => {
     const newUser = new User(userData);
     const savedUser = await newUser.save();
 
+
+
     // --- Création automatique de la cotisation pour l'année en cours ---
-    const currentYear = new Date().getFullYear();
-    const defaultAmount = process.env.DEFAULT_COTISATION_AMOUNT || 5000; // montant par défaut, modifiable via .env
-    const dueDate = new Date(currentYear, 3, 31); // 31 décembre de l'année en cours
+   // ... after user creation
 
-    const cotisation = new Cotisation({
-      user: savedUser._id,
-      year: currentYear,
-      amount: defaultAmount,
-      dueDate: dueDate,
-      status: 'pending',
-      notes: 'Cotisation automatique à l\'inscription',
-      createdBy: savedUser._id
-    });
 
-    await cotisation.save();
 
-    // Lier la cotisation à l'utilisateur
-    savedUser.fees = savedUser.fees || [];
-    savedUser.fees.push(cotisation._id);
-    await savedUser.save();
-    // --- Fin de la création de la cotisation ---
+// --- Création automatique des cotisations pour l'année en cours ---
+const startYear = savedUser.startDate.getFullYear();
+
+const currentYear = new Date().getFullYear();
+
+const feeTypes = ['annual', 'event']; // add other types as needed
+for (let year = startYear; year <= currentYear; year++){  
+  for (const feeType of feeTypes) {
+    const template = await Cotisation.findOne({ 
+      year: year, 
+      feeType: feeType 
+    }).sort({ createdAt: -1 }); 
+
+    if (template) {
+      const cotisation = new Cotisation({
+        user: savedUser._id,
+        year: year,
+        amount: template.amount,
+        dueDate: template.dueDate,
+        penaltyConfig: template.penaltyConfig,
+        feeType: template.feeType,
+        status: 'pending',
+        notes: template.notes + `Cotisation automatique à l'inscription (année ${year})`,
+        createdBy: savedUser._id
+      });
+      await cotisation.save();
+      savedUser.fees = savedUser.fees || [];
+      savedUser.fees.push(cotisation._id);
+    }
+  }}
+await savedUser.save(); 
 
     // Générer le token de vérification
     const token = jwt.sign(

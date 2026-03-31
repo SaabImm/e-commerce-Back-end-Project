@@ -73,8 +73,18 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true  // Allows null but enforces uniqueness when present
   },
+
+  actvityStartDate : {
+    type: Date,
+    default: Date.now
+  },
   
-  specialty: String,  // Spécialité médicale/architecturale/etc
+  startDate: {
+    type: Date,
+    default: this.actvityStartDate
+  },
+
+  specialty: String,  
   
   // ===== PERMISSION & ACCESS CONTROL =====
   role: {
@@ -210,6 +220,8 @@ userSchema.virtual('fullName').get(function() {
 userSchema.virtual('totalDebt').get(function() {
   if (!this.fees || !Array.isArray(this.fees)) return 0;
   return this.fees.reduce((sum, fee) => {
+    // Exclure les cotisations annulées
+    if (fee.status === 'cancelled') return sum;
     const totalDue = (fee.amount || 0) + (fee.penalty || 0);
     const paid = fee.paidAmount || 0;
     return sum + Math.max(0, totalDue - paid);

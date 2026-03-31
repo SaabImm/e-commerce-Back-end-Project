@@ -2,6 +2,7 @@
 const Cotisation = require('../Models/FeesModel');
 const PermissionService = require('../Services/PermissionService');
 const FeeService = require('../Services/FeeService');
+const Payment = require('../Models/PayementModel')
 const User = require('../Models/UsersModels');
 const mongoose = require('mongoose');
 
@@ -245,32 +246,25 @@ exports.deleteCotisation = async (req, res) => {
 
 exports.deleteAllCotisations = async (req, res) => {
   try {
-
-
-    // Vérifier que l'utilisateur est super_admin (ou admin avec droit spécial)
+    // Only super_admin can perform this cleanup
     if (req.user.role !== 'super_admin') {
       return res.status(403).json({ message: 'Accès non autorisé' });
     }
 
-    // Récupérer toutes les cotisations
-    const cotisations = await Cotisation.find({});
+    // 1. Reset all users: remove fees array and set credit to 0
+    await User.updateMany({}, { $set: { fees: [], credit: 0 } });
 
-    // Parcourir et rembourser les crédits si nécessaire
-    for (const cot of cotisations) {
-      if (cot.paidAmount > 0) {
-        await FeeService.updateCredit(cot.user.toString(), cot.paidAmount);
-      }
-      // Supprimer la référence dans l'utilisateur (optionnel mais cohérent)
-      await User.findByIdAndUpdate(cot.user, { $pull: { fees: cot._id } });
-    }
+    // 2. Delete all payments
+    const paymentsDeleted = await Payment.deleteMany({});
 
-    // Supprimer toutes les cotisations
-    const result = await Cotisation.deleteMany({});
+    // 3. Delete all cotisations
+    const cotisationsDeleted = await Cotisation.deleteMany({});
 
     res.json({
-      message: 'Toutes les cotisations ont été supprimées',
-      deletedCount: result.deletedCount,
-      refundedCount: cotisations.filter(c => c.paidAmount > 0).length
+      message: 'Nettoyage complet effectué',
+      cotisationsDeleted: cotisationsDeleted.deletedCount,
+      paymentsDeleted: paymentsDeleted.deletedCount,
+      usersReset: await User.countDocuments()
     });
   } catch (error) {
     console.error(error);
@@ -359,8 +353,11 @@ exports.bulkCreateCotisations = async (req, res) => {
       return res.status(403).json({ message: 'Accès non autorisé' });
     }
 
-    const { role, wilaya, year, amount, dueDate, notes, penaltyConfig } = req.body;
-
+    const { role, wilaya, year, amount, dueDate, notes, feeType, penaltyConfig } = req.body;
+    const numericAmount = Number(amount);
+    if (isNaN(numericAmount)) {
+      return res.status(400).json({ message: 'Le montant doit être un nombre valide' });
+    }
     if (!year || !amount || !dueDate) {
       return res.status(400).json({ message: 'Année, montant et date d’échéance sont requis' });
     }
@@ -379,64 +376,67 @@ exports.bulkCreateCotisations = async (req, res) => {
 
     for (const user of users) {
       // Vérifier si une cotisation pour cette année existe déjà
-      const existing = await Cotisation.findOne({ user: user._id, year });
+      const existing = await Cotisation.findOne({ user: user._id, year, feeType });
       if (existing) {
         skipped.push(user._id);
         continue;
       }
 
-      // Créer la cotisation sans paiement initial
-      const payload = {
-        user: user._id,
-        year,
-        amount,
-        dueDate: new Date(dueDate),
-        penaltyConfig,
-        notes: notes || '',
-        paidAmount: 0,
-        status: 'pending',
-        paymentDate: null,
-        paymentMethod: null,
-      };
-      const newCotisation = await FeeService.createFee(user._id, viewerId, payload);
+// Inside the loop, after checking for existing cotisation:
 
-      // Si l'utilisateur a du crédit, on l'applique maintenant
-      let creditUsed = 0;
-      let excess = 0;
+// 1. Create the cotisation object 
+const newCotisation = new Cotisation({
+  user: user._id,
+  year,
+  feeType,
+  amount: numericAmount,
+  dueDate: new Date(dueDate),
+  penaltyConfig,
+  notes: notes || '',
+  paidAmount: 0,
+  status: 'pending',
+  paymentDate: null,
+  paymentMethod: null,
+  createdBy: viewerId
+});
 
-      if (user.credit > 0) {
-        creditUsed = Math.min(user.credit, amount);
-        if (creditUsed > 0) {
-          // Appliquer le paiement par crédit
-          const paymentData = {
-            paidAmount: 0,
-            paymentDate: new Date(),
-            paymentMethod: 'credit',
-            creditUsed,
-            notes: 'Paiement automatique par crédit lors de la création en masse',
-          };
-          const result = await FeeService.payCotisation(newCotisation, paymentData, viewerId);
-          excess = result.excess;
+// 2. Save it for the first time → pre‑save middleware runs, penalty is calculated and set
+await newCotisation.save();
 
-          // Sauvegarder les modifications de la cotisation (payCotisation a modifié l'objet en mémoire)
-          await newCotisation.save();
+// 3. Now apply credit if available (
+let totalDue = numericAmount + (newCotisation.penalty || 0);
 
-          // Mettre à jour le crédit de l'utilisateur : déduire le crédit utilisé et ajouter l'excédent
-          let netCreditChange = -creditUsed + excess;
-          if (netCreditChange !== 0) {
-            await FeeService.updateCredit(user._id, netCreditChange);
-          }
-        }
-      }
+let creditUsed = 0;
+let excess = 0;
 
-      // Si aucun crédit utilisé ou après paiement, on s'assure que la cotisation est bien liée à l'utilisateur
-      // (createFee l'a déjà fait, mais on pourrait vouloir mettre à jour le crédit si aucun crédit utilisé)
-      if (creditUsed === 0) {
-        // Pas de crédit utilisé, donc on n'a pas modifié le crédit
-        // On peut quand même s'assurer que la cotisation est liée (déjà fait par createFee)
-      }
+if (user.credit > 0) {
+  creditUsed = Math.min(user.credit, totalDue);
 
-      created.push(user._id);
+  if (creditUsed > 0) {
+    const paymentData = {
+      paidAmount: 0,
+      paymentDate: new Date(),
+      paymentMethod: 'credit',
+      creditUsed,
+      notes: 'Paiement automatique par crédit lors de la création en masse',
+    };
+    const result = FeeService.payCotisation(newCotisation, paymentData);
+    excess = (typeof result.excess === 'number' && !isNaN(result.excess)) ? result.excess : 0;
+    // payCotisation modifies the cotisation object in memory
+    await newCotisation.save(); // save again to persist payment changes
+
+    const netCreditChange = -creditUsed + excess;
+    if (!isNaN(netCreditChange) && netCreditChange !== 0) {
+      await FeeService.updateCredit(user._id, netCreditChange);
+    }
+  }
+}
+
+// 4. Link the cotisation to the user (if not already done by createFee, but here we use manual linking)
+await User.findByIdAndUpdate(user._id, { $push: { fees: newCotisation._id } });
+
+created.push(user._id);
+
     }
 
     res.status(201).json({
