@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 
 const paymentSchema = new mongoose.Schema({
@@ -8,36 +7,39 @@ const paymentSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+
   cotisation: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Cotisation',
-    default: null
+    default: null,
+    index: true
   },
+
   amount: {
     type: Number,
     required: true,
     min: 0
   },
+
   type: {
     type: String,
     enum: ['cash', 'bank_transfer', 'check', 'online', 'credit', 'other'],
     required: true
   },
+
   date: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    index: true
   },
+
   notes: String,
-  // Indique si ce paiement provient d'un crédit utilisateur
+
   fromCredit: {
     type: Boolean,
     default: false
-  },
-  // Pour les paiements répartis sur plusieurs cotisations
-  allocations: [{
-    cotisation: { type: mongoose.Schema.Types.ObjectId, ref: 'Cotisation' },
-    amount: Number
-  }]
+  }
+
 }, {
   timestamps: true
 });

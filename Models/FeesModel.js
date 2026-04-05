@@ -1,3 +1,4 @@
+// models/FeesModel.js
 const mongoose = require('mongoose');
 
 const cotisationSchema = new mongoose.Schema({
@@ -7,93 +8,47 @@ const cotisationSchema = new mongoose.Schema({
     required: true,
     index: true
   },
-  year: {
-    type: Number,
-    required: true,
-    index: true
-  },
-  amount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  paidAmount: {
-    type: Number,
-    min: 0
-  },
-  dueDate: {
-    type: Date,
-    required: true
-  },
-  paymentDate: {
-    type: Date,
-    default: null
-  },
+  year: { type: Number, required: true, index: true },
+  amount: { type: Number, required: true, min: 0 },
+  dueDate: { type: Date, required: true },
   feeType: {
-  type: String,
-  enum: ['annual', 'event', 'training', 'exceptional', 'other'],
-  default: 'annual',
-  index: true
-},
-  penalty: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  penaltyConfig: {
-  type: {
     type: String,
-    enum: ['none', 'fixed', 'percentage'],
-    default: 'none'
-  },
-  rate: {
-    type: Number,
-    min: 0,
-    default: 0
-  },
-  frequency: {
-    type: String,
-    enum: ['none','once', 'monthly', 'yearly', 'semi-annual'],
-    default: 'none'
-  },
-  // Optionnel : date de dernière application (pour éviter de cumuler plusieurs fois)
-  lastPenaltyDate: {
-    type: Date,
-    default: null
-  }
-},
-  status: {
-    type: String,
-    enum: ['pending', 'paid', 'partial', 'overdue', 'cancelled'],
-    default: 'pending',
+    enum: ['annual', 'event', 'training', 'exceptional', 'other'],
+    default: 'annual',
     index: true
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+  penalty: { type: Number, default: 0, min: 0 },
+  penaltyConfig: {
+    type: {
+      type: String,
+      enum: ['none', 'fixed', 'percentage'],
+      default: 'none'
+    },
+    rate: { type: Number, min: 0, default: 0 },
+    frequency: {
+      type: String,
+      enum: ['none', 'once', 'monthly', 'yearly', 'semi-annual'],
+      default: 'none'
+    },
+    lastPenaltyDate: { type: Date, default: null }
   },
-  updatedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  paymentMethod: {
-    type: String,
-    enum: ['cash', 'bank_transfer', 'check', 'online', 'credit', 'other'],
-    default: null
-  },
-  notes: String
+  notes: String,
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  cancelled: { type: Boolean, default: false, index: true }  // <-- new field
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
-// Virtual: check if overdue (due date passed and not paid/cancelled)
-cotisationSchema.virtual('isOverdue').get(function() {
+// Virtual for overdue check
+cotisationSchema.virtual('isOverdue').get(function () {
   const now = new Date();
-  return this.dueDate < now && this.status !== 'paid' && this.status !== 'cancelled';
+  return this.dueDate < now;
 });
-  
 
-// Method: calculate penalty (e.g., 10% of amount, or fixed 500 DA)
+// Penalty calculation (unchanged, but uses isOverdue)
 cotisationSchema.methods.calculatePenalty = function() {
   if (!this.isOverdue || this.penaltyConfig.type === 'none') return 0;
 
@@ -156,19 +111,9 @@ cotisationSchema.methods.calculatePenalty = function() {
   return Math.round(penaltyAmount);
 };
 
-// Pre-save middleware to update status and penalty
-cotisationSchema.pre('save', function(next) {
-  // Auto‑set status to overdue if conditions met (only if not paid/cancelled)
-  if (this.isOverdue && this.status !== 'paid' && this.status !== 'cancelled') {
-    this.status = 'overdue';
-  }
-
-  // Recalculate penalty only if the fee is still unpaid (pending, partial, or overdue)
-  if (this.status !== 'paid' && this.status !== 'cancelled') {
-    this.penalty = this.calculatePenalty();
-  }
-  // If the fee is paid or cancelled, the penalty stays as it was (frozen)
-
+// Pre‑save hook to update penalty
+cotisationSchema.pre('save', function (next) {
+  this.penalty = this.calculatePenalty();
   next();
 });
 

@@ -9,20 +9,24 @@ router.use(authenticate);
 // Routes admin / lecture
 router.get('/', CotisationController.getCotisations);
 router.get('/stats', CotisationController.getStats);
-router.get('/:id', CotisationController.getCotisationById);
 router.get('/user/:userId', CotisationController.getUserCotisations);
+router.get('/:id', CotisationController.getCotisationById);
+
 
 
 
 router.post('/', CotisationController.createCotisation);
+router.post('/versement', CotisationController.versement);
+
 router.post('/bulk-create', CotisationController.bulkCreateCotisations);
 router.patch('/:id', CotisationController.updateCotisation);
 router.patch('/pay/:id', CotisationController.payCotisation);
-router.delete('/:id', CotisationController.cancelCotisation);
+router.patch('/:id/cancel', CotisationController.cancelCotisation);
+
 
 //super admin only
 router.delete('/super-admin/all', CotisationController.deleteAllCotisations);
-router.delete('/:id/delete', CotisationController.deleteCotisation);
+router.delete('/:id', CotisationController.deleteCotisation);
 
 
 
