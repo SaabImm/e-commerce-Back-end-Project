@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const sendVerificationEmail = require("../Middleware/sendEmail")
 const Cotisation = require('../Models/FeesModel');
+const FeeDefinition = require('../Models/FeeDefinition')
 
 exports.login = async (req, res) => {
   try {
@@ -126,24 +127,24 @@ exports.signup = async (req, res) => {
   try {
     const { name, lastname, email, password, dateOfBirth, sexe, startDate, registrationNumber } = req.body;
 
-    // Vérifier les champs obligatoires
+    // Validate required fields
     if (!name || !lastname || !email || !password) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    // Valider le format de l'email
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ message: "Please enter a valid email address" });
     }
 
-    // Vérifier si l'email existe déjà
+    // Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ message: "Email already in use" });
     }
 
-    // Vérifier si le numéro d'inscription existe déjà (s'il est fourni)
+    // Check if registration number already exists (if provided)
     if (registrationNumber) {
       const existingReg = await User.findOne({ registrationNumber });
       if (existingReg) {
@@ -151,10 +152,10 @@ exports.signup = async (req, res) => {
       }
     }
 
-    // Hasher le mot de passe
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Préparer les données utilisateur
+    // Prepare user data
     const userData = {
       name,
       lastname,
@@ -169,60 +170,62 @@ exports.signup = async (req, res) => {
       userData.dateOfBirth = dateOfBirth;
     }
 
-    // Créer l'utilisateur
+    // Create user
     const newUser = new User(userData);
     const savedUser = await newUser.save();
 
+    // --- Create fees based on FeeDefinition campaigns ---
+    const startYear = savedUser.startDate.getFullYear();
+    const currentYear = new Date().getFullYear();
 
+    // Find all active fee definitions from startYear to currentYear
+    const feeDefinitions = await FeeDefinition.find({
+      year: { $gte: startYear, $lte: currentYear },
+      isActive: true
+    }).sort({ year: 1, feeType: 1 });
 
-    // --- Création automatique de la cotisation pour l'année en cours ---
-   // ... after user creation
+    for (const def of feeDefinitions) {
+      // Avoid duplicate cotisations for the same user/year/type
+      const existing = await Cotisation.findOne({
+        user: savedUser._id,
+        year: def.year,
+        feeType: def.feeType
+      });
+      if (existing) continue;
 
-
-
-// --- Création automatique des cotisations pour l'année en cours ---
-const startYear = savedUser.startDate.getFullYear();
-
-const currentYear = new Date().getFullYear();
-
-const feeTypes = ['annual', 'event']; // add other types as needed
-for (let year = startYear; year <= currentYear; year++){  
-  for (const feeType of feeTypes) {
-    const template = await Cotisation.findOne({ 
-      year: year, 
-      feeType: feeType 
-    }).sort({ createdAt: -1 }); 
-
-    if (template) {
+      // Create individual cotisation linked to the definition
       const cotisation = new Cotisation({
         user: savedUser._id,
-        year: year,
-        amount: template.amount,
-        dueDate: template.dueDate,
-        penaltyConfig: template.penaltyConfig,
-        feeType: template.feeType,
-        status: 'pending',
-        notes: template.notes + `Cotisation automatique à l'inscription (année ${year})`,
-        createdBy: savedUser._id
+        feeDefinition: def._id,
+        year: def.year,
+        amount: def.amount,
+        dueDate: def.dueDate,
+        feeType: def.feeType,
+        penaltyConfig: def.penaltyConfig,
+        notes: `Cotisation automatique à l'inscription (${def.title})`,
+        createdBy: savedUser._id,
+        cancelled: false
       });
       await cotisation.save();
-      savedUser.fees = savedUser.fees || [];
+
+      // Add reference to user's fees array
+      if (!savedUser.fees) savedUser.fees = [];
       savedUser.fees.push(cotisation._id);
     }
-  }}
-await savedUser.save(); 
 
-    // Générer le token de vérification
+    await savedUser.save();
+
+    // Generate verification token
     const token = jwt.sign(
       { id: savedUser._id, role: savedUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
 
-    // Envoyer l'email de vérification
+    // Send verification email
     await sendVerificationEmail(savedUser.email, token);
 
-    // Réponse
+    // Response
     res.status(201).json({
       token,
       message: "Email sent, please verify your inbox!",

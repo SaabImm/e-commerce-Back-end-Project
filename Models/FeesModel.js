@@ -8,6 +8,7 @@ const cotisationSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  feeDefinition: { type: mongoose.Schema.Types.ObjectId, ref: 'FeeDefinition' },
   year: { type: Number, required: true, index: true },
   amount: { type: Number, required: true, min: 0 },
   dueDate: { type: Date, required: true },
@@ -35,7 +36,7 @@ const cotisationSchema = new mongoose.Schema({
   notes: String,
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  cancelled: { type: Boolean, default: false, index: true }  // <-- new field
+  cancelled: { type: Boolean, default: false, index: true }  
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

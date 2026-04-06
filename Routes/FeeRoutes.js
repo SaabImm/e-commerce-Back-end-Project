@@ -10,7 +10,7 @@ router.use(authenticate);
 router.get('/', CotisationController.getCotisations);
 router.get('/stats', CotisationController.getStats);
 router.get('/user/:userId', CotisationController.getUserCotisations);
-router.get('/:id', CotisationController.getCotisationById);
+//router.get('/:id', CotisationController.getCotisationById);
 
 
 
@@ -28,6 +28,11 @@ router.patch('/:id/cancel', CotisationController.cancelCotisation);
 router.delete('/super-admin/all', CotisationController.deleteAllCotisations);
 router.delete('/:id', CotisationController.deleteCotisation);
 
+//definition Routes
 
+router.get('/definitions', CotisationController.getAllDefinitions);
+router.post('/definitions', CotisationController.createDefinition);
+router.put('/definitions/:id', CotisationController.updateDefinition);
+router.delete('/definitions/:id', CotisationController.deleteDefinition);
 
 module.exports = router;

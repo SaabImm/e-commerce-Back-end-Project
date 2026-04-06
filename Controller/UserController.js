@@ -7,7 +7,7 @@ const Payment= require('../Models/PayementModel')
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const PermissionService = require('../Services/PermissionService');
-
+const FeeDefinition = require('../Models/FeeDefinition')
 
 exports.getAllUsers = async (req, res) => {
   try {
@@ -41,33 +41,35 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-exports.getUserById = async(req, res) => {
+exports.getUserById = async (req, res) => {
   try {
-    const targetId = req.params.id; 
+    const targetId = req.params.id;
     const viewerId = req.user.id;
 
-    //verifies if it's anything but a number
-    if (!mongoose.isValidObjectId(targetId)) {  
-     return res.status(400).json({ message: "Invalid ID format / Bad Request " });
+    if (!mongoose.isValidObjectId(targetId)) {
+      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
     }
 
-    //finds the product if it exists
-    const targetUser = await User.findById(targetId).populate("files").populate("fees");
-    if (!targetUser){ return res.status(404).json({ message: "User Not Found !!" });}
-
-    const canPerform = await PermissionService.canPerform(viewerId,targetId, "read", 'User')
-    if (!canPerform){
-      return res.status(403).json({message : "Unauthorized!!"})
+    const targetUser = await User.findById(targetId)
+      .populate("files")
+      .populate("fees");
+    if (!targetUser) {
+      return res.status(404).json({ message: "User Not Found !!" });
     }
-    //returns the product in json
+
+    const canPerform = await PermissionService.canPerform(viewerId, targetId, "read", 'User');
+    if (!canPerform) {
+      return res.status(403).json({ message: "Unauthorized!!" });
+    }
+
     return res.json({
-      message: "User Found", 
-      user:targetUser
+      message: "User Found",
+      user: targetUser
     });
-    } 
-   catch(error){
-    res.status(500).json({message: 'Server Error', error: error})
-   }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error', error: error.message });
+  }
 };
 
 exports.createUser = async (req, res) => {
@@ -81,14 +83,14 @@ exports.createUser = async (req, res) => {
     }
 
     // 2. Check create operation permission
-    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create",'User');
+    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create", 'User');
     if (!canCreate) {
       return res.status(403).json({ message: "Unauthorized operation" });
     }
 
-    // 3. Get creatable fields for this viewer (based on their role/tenant)
+    // 3. Get creatable fields for this viewer
     const creatable = await PermissionService.getCreatableFields(viewerId, viewerId, 'User');
-    const allowedFields = creatable.fields; // array of field names
+    const allowedFields = creatable.fields;
 
     // 4. Build user data using only allowed fields
     const userData = {};
@@ -102,20 +104,17 @@ exports.createUser = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     userData.password = hashedPassword;
 
-    // 6. 
-    // Check for duplicate email (if email is being set)
+    // 6. Check duplicates
     if (userData.email) {
       const existingEmail = await User.findOne({ email: userData.email });
       if (existingEmail) {
         return res.status(409).json({ message: "Email already exists" });
       }
     }
-
-    // Check for duplicate regNumber 
     if (userData.registrationNumber) {
       const existingRegnbr = await User.findOne({ registrationNumber: userData.registrationNumber });
       if (existingRegnbr) {
-        return res.status(409).json({ message: "Registration Number Already already exists" });
+        return res.status(409).json({ message: "Registration Number already exists" });
       }
     }
 
@@ -125,13 +124,58 @@ exports.createUser = async (req, res) => {
     const newUser = new User(userData);
     const savedUser = await newUser.save();
 
+    // ==============================================================
+    // 8. Auto‑create cotisations based on FeeDefinition campaigns
+    // ==============================================================
+    const startYear = savedUser.startDate ? savedUser.startDate.getFullYear() : new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
+
+    // Find all active fee definitions for years from startYear to currentYear
+    const feeDefinitions = await FeeDefinition.find({
+      year: { $gte: startYear, $lte: currentYear },
+      isActive: true
+    }).sort({ year: 1, feeType: 1 });
+
+    for (const def of feeDefinitions) {
+      // Avoid duplicate cotisations (same user, year, type)
+      const existing = await Cotisation.findOne({
+        user: savedUser._id,
+        year: def.year,
+        feeType: def.feeType
+      });
+      if (existing) continue;
+
+      // Create individual cotisation linked to the definition
+      const cotisation = new Cotisation({
+        user: savedUser._id,
+        feeDefinition: def._id,
+        year: def.year,
+        amount: def.amount,
+        dueDate: def.dueDate,
+        feeType: def.feeType,
+        penaltyConfig: def.penaltyConfig,
+        notes: `Cotisation automatique à la création du compte (${def.title})`,
+        createdBy: viewerId,
+        cancelled: false
+      });
+      await cotisation.save();
+
+      // Add reference to user's fees array
+      if (!savedUser.fees) savedUser.fees = [];
+      savedUser.fees.push(cotisation._id);
+    }
+
+    // Save the updated user with fees array
+    await savedUser.save();
+
+    // 9. Return response
     return res.status(201).json({
-      message: "User created successfully",
+      message: "User created successfully with mandatory fees",
       user: savedUser
     });
   } catch (error) {
     console.error("Create user error:", error);
-    return res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 exports.deleteUserById = async (req, res) => {
