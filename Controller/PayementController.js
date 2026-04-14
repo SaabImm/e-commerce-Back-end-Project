@@ -60,7 +60,7 @@ exports.getPaymentsForUser = async (req, res) => {
     // Vérifier la permission de lecture
     const canRead = await PermissionService.canPerform(viewerId, userId, 'read', 'Payement');
     if (!canRead) return res.status(403).json({ message: 'Non autorisé' });
-    const payments = await Payment.find({ user: userId,  type: { $nin: ['credit', 'other'] }})
+    const payments = await Payment.find({ user: userId,  type: { $nin: [ 'other'] }})
       .populate('cotisation')
       .sort({ date: -1 });
     res.json(payments);

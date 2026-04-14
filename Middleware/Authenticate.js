@@ -1,35 +1,46 @@
 const jwt = require("jsonwebtoken");
 const User = require("../Models/UsersModels");
-const mongoose = require("mongoose"); // Ajout pour la validation d'ObjectId
+const mongoose = require("mongoose");
 
 const authenticate = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+  let token;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No Token Provided!!" });
+  // ✅ 1. Try Authorization header (standard way)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
   }
 
-  const token = authHeader.split(" ")[1];
+  // ✅ 2. Fallback to query param (for iframe / download)
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+
+  // ❌ No token at all
+  if (!token) {
+    return res.status(401).json({ message: "No Token Provided!!" });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const id = decoded.id || decoded._id;
 
-    // 1. Vérifier que l'ID est un ObjectId MongoDB valide
+    // ✅ Validate MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(401).json({ message: "Invalid user ID in token" });
     }
 
-    // 2. Rechercher l'utilisateur dans la base de données
+    // ✅ Fetch user
     const user = await User.findById(id);
     if (!user) {
       return res.status(401).json({ message: "User Not found" });
     }
 
+    // ✅ Attach user to request
     req.user = user;
+
     next();
   } catch (error) {
-    // Si l'erreur provient de jwt.verify ou d'ailleurs, on considère le token invalide
     return res.status(401).json({ message: "Invalid Token!!" });
   }
 };

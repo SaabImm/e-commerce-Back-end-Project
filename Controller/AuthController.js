@@ -1,7 +1,7 @@
 const User = require("../Models/UsersModels");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const sendVerificationEmail = require("../Middleware/sendEmail")
+const {sendVerificationEmail} = require("../Middleware/sendEmail")
 const Cotisation = require('../Models/FeesModel');
 const FeeDefinition = require('../Models/FeeDefinition')
 

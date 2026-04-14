@@ -8,6 +8,70 @@ const {applyWithChangelog}= require('../Helpers/Utils/updateChangeLog')
 class FeeService {
 
   // =============================
+  // 🧮 Helpers
+  // =============================
+monthsBetween(date1, date2) {
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  let months = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+  if (d2.getDate() < d1.getDate()) months--;
+  return Math.max(0, months);
+}
+
+
+calculatePenalty(amount, dueDate, penaltyConfig, referenceDate) {
+  // If no penalty configuration or type is 'none', return 0
+  if (!penaltyConfig || penaltyConfig.type === 'none') return 0;
+
+  // Not overdue
+  if (referenceDate <= dueDate) return 0;
+
+  const monthsDiff = this.monthsBetween(dueDate, referenceDate);
+  let penalty = 0;
+
+  switch (penaltyConfig.frequency) {
+    case 'once':
+      if (monthsDiff > 0) {
+        penalty = penaltyConfig.type === 'fixed'
+          ? penaltyConfig.rate
+          : amount * penaltyConfig.rate / 100;
+      }
+      break;
+    case 'monthly':
+      if (monthsDiff > 0) {
+        if (penaltyConfig.type === 'fixed') {
+          penalty = penaltyConfig.rate * monthsDiff;
+        } else {
+          penalty = amount * (penaltyConfig.rate / 100) * monthsDiff;
+        }
+      }
+      break;
+    case 'yearly':
+      const yearsDiff = Math.floor(monthsDiff / 12);
+      if (yearsDiff > 0) {
+        if (penaltyConfig.type === 'fixed') {
+          penalty = penaltyConfig.rate * yearsDiff;
+        } else {
+          penalty = amount * (penaltyConfig.rate / 100) * yearsDiff;
+        }
+      }
+      break;
+    case 'semi-annual':
+      const semesters = Math.floor(monthsDiff / 6);
+      if (semesters > 0) {
+        if (penaltyConfig.type === 'fixed') {
+          penalty = penaltyConfig.rate * semesters;
+        } else {
+          penalty = amount * (penaltyConfig.rate / 100) * semesters;
+        }
+      }
+      break;
+    default:
+      penalty = 0;
+  }
+  return Math.round(penalty);
+}
+  // =============================
   // 🧮 COMPUTE STATE (CORE)
   // =============================
 async computeFeeState(cotisationId) {
@@ -18,9 +82,29 @@ async computeFeeState(cotisationId) {
     return { totalPaid: 0, totalDue: 0, remaining: 0, status: 'cancelled', lastPaymentDate: null };
   }
 
-  const payments = await Payment.find({ cotisation: cotisationId }).sort({ date: -1 }); // newest first
+    // Only consider non‑reversed payments
+  const payments = await Payment.find({ cotisation: cotisationId, reversed: false }).sort({ date: -1 });
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalDue = cotisation.amount + (cotisation.penalty || 0);
+
+  // Determine reference date for penalty calculation
+  let referenceDate;
+  if (totalPaid > 0 && payments[0]?.date) {
+    // If there are payments, penalty is based on the date of the last payment
+    referenceDate = new Date(payments[0].date);
+  } else {
+    // Not paid yet – penalty based on today
+    referenceDate = new Date();
+  }
+
+  // Compute penalty dynamically
+  const penalty = this.calculatePenalty(
+    cotisation.amount,
+    cotisation.dueDate,
+    cotisation.penaltyConfig,
+    referenceDate
+  );
+
+  const totalDue = cotisation.amount + penalty;
   const remaining = totalDue - totalPaid;
 
   let status = 'pending';
@@ -28,19 +112,24 @@ async computeFeeState(cotisationId) {
   else if (totalPaid > 0) status = 'partial';
   else if (cotisation.dueDate < new Date()) status = 'overdue';
 
-  // Last payment date (if any)
   const lastPaymentDate = payments.length > 0 ? payments[0].date : null;
 
-  return { totalPaid, totalDue, remaining, status, lastPaymentDate };
+  return { totalPaid, totalDue, remaining, status, lastPaymentDate, penalty  };
 }
-  async attachComputed(cotisation) {
-    const computed = await this.computeFeeState(cotisation._id);
-    return { ...cotisation.toObject(), computed };
-  }
+async attachComputed(cotisation) {
+  const computed = await this.computeFeeState(cotisation._id);
+  return { ...cotisation.toObject(), computed };
+}
 
   // =============================
   // 📦 GETTERS
   // =============================
+
+async getFeeById(feeId) {
+  const cotisation = await Cotisation.findById(feeId).populate('user', 'name lastname email');
+  if (!cotisation) throw new Error('Cotisation non trouvée');
+  return this.attachComputed(cotisation);
+}
 async getAllFees() {
   const cotisations = await Cotisation.find().populate('user', 'name lastname email');
 
@@ -56,10 +145,10 @@ async getAllFeeDefinitions() {
   return await FeeDefinition.find().sort({ year: -1, feeType: 1 });
 }
 
-  async getUserFees(userId) {
-    const cotisations = await Cotisation.find({ user: userId });
-    return Promise.all(cotisations.map(c => this.attachComputed(c)));
-  }
+async getUserFees(userId) {
+  const cotisations = await Cotisation.find({ user: userId });
+  return Promise.all(cotisations.map(c => this.attachComputed(c)));
+}
 
   // =============================
   // ➕ CREATE
@@ -92,10 +181,6 @@ async getAllFeeDefinitions() {
   async updateFee({ feeId, updates }) {
     const cotisation = await Cotisation.findById(feeId);
     if (!cotisation) throw new Error("Cotisation non trouvée");
-
-    // Prevent updating fields that should be handled by payments
-    const forbidden = ['paymentMethod', 'paymentDate', 'paidAmount', 'creditUsed'];
-    forbidden.forEach(f => delete updates[f]);
 
     // Apply updates
     Object.keys(updates).forEach(key => {
@@ -134,129 +219,160 @@ async updateFeeDefinition(defId, userId, updates, propagateToFees = true) {
   // =============================
   // 💳 PAY (LEDGER)
   // =============================
-  async payCotisation({
-    feeId,
-    amount = 0,
-    creditUsed = 0,
-    paymentMethod,
-    paymentDate,
-    notes
-  }) {
-    const cotisation = await Cotisation.findById(feeId);
-    if (!cotisation) throw new Error("Cotisation non trouvée");
-    if (cotisation.cancelled) throw new Error("Impossible de payer une cotisation annulée");
+async payCotisation({
+  feeId,
+  amount = 0,
+  creditUsed = 0,
+  paymentMethod,
+  paymentDate,
+  notes,
+  skipRedistribution = false
+}) {
+  const cotisation = await Cotisation.findById(feeId);
+  if (!cotisation) throw new Error("Cotisation non trouvée");
+  if (cotisation.cancelled) throw new Error("Impossible de payer une cotisation annulée");
 
-    const userId = cotisation.user;
-    // Validate credit
-    if (creditUsed > 0) {
-      const user = await User.findById(userId);
-      if (user.credit < creditUsed) {
-        throw new Error('Crédit insuffisant');
-      }
-    }
+  const userId = cotisation.user;
+  if (creditUsed > 0) {
+    const user = await User.findById(userId);
+    if (user.credit < creditUsed) throw new Error('Crédit insuffisant');
+  }
 
-    // Create payment record
-    const payment = new Payment({
-      user: userId,
-      cotisation: feeId,
-      amount: amount + creditUsed,
-      type: paymentMethod,
-      date: paymentDate || new Date(),
-      notes,
-      fromCredit: creditUsed > 0
-    });
-    await payment.save();
-
-    // Deduct credit if used
-    if (creditUsed > 0) {
-      await User.findByIdAndUpdate(userId, {
-        $inc: { credit: -creditUsed }
-      });
-
-      await CreditTransaction.create({
+  const payment = new Payment({
     user: userId,
-    amount: -creditUsed,
-    type: 'used_for_fee',
-    reference: feeId,
-    refModel: 'Cotisation',
-    notes: `Used credit for fee ${feeId}`
+    cotisation: feeId,
+    amount: amount + creditUsed,
+    type: paymentMethod,
+    date: paymentDate || new Date(),
+    notes,
+    fromCredit: creditUsed > 0
   });
-    }
+  await payment.save();
 
-    // Compute totals and check for overpayment
-    const { totalPaid, totalDue } = await this.computeFeeState(feeId);
-    if (totalPaid > totalDue) {
-      const excess = totalPaid - totalDue;
-      await User.findByIdAndUpdate(userId, {
-        $inc: { credit: excess }
-      });
+  if (creditUsed > 0) {
+    await User.findByIdAndUpdate(userId, { $inc: { credit: -creditUsed } });
+    await CreditTransaction.create({
+      user: userId,
+      amount: -creditUsed,
+      type: 'used_for_fee',
+      reference: feeId,
+      refModel: 'Cotisation',
+      notes: `Crédit utilisé pour payer : ${cotisation.getTitle()}`
+    });
+  }
 
+  const { totalPaid, totalDue } = await this.computeFeeState(feeId);
+  if (totalPaid > totalDue) {
+    const excess = totalPaid - totalDue;
+    await User.findByIdAndUpdate(userId, { $inc: { credit: excess } });
     await CreditTransaction.create({
       user: userId,
       amount: excess,
       type: 'excess_from_fee',
       reference: feeId,
       refModel: 'Cotisation',
-      notes: `Overpayment refunded as credit`
+      notes: `Remboursement excédent pour : ${cotisation.getTitle()}`
     });
+    if (!skipRedistribution && excess > 0) {
+      await this.applyCreditToUnpaidFees(userId, excess);
     }
-
-    return this.attachComputed(cotisation);
   }
+
+  return this.attachComputed(cotisation);
+}
 
   // =============================
   // 🔄 APPLY CREDIT TO UNPAID FEES
   // =============================
-  async applyCreditToUnpaidFees(userId, amount, viewerId) {
-    if (amount <= 0) return;
+async applyCreditToUnpaidFees(userId, amount) {
 
-    const fees = await Cotisation.find({ user: userId, cancelled: false });
-    // Sort by dueDate (oldest first)
-    fees.sort((a, b) => a.dueDate - b.dueDate);
+  if (amount <= 0) return;
 
-    let remaining = amount;
-    for (const fee of fees) {
-      if (remaining <= 0) break;
+  const fees = await Cotisation.find({ user: userId, cancelled: false });
+  // Sort by dueDate (oldest first)
+  fees.sort((a, b) => a.dueDate - b.dueDate);
 
-      const { remaining: feeRemaining } = await this.computeFeeState(fee._id);
-      if (feeRemaining <= 0) continue;
+  let remaining = amount;
+  for (const fee of fees) {
+    if (remaining <= 0) break;
 
-      const toUse = Math.min(remaining, feeRemaining);
-      if (toUse > 0) {
-        await this.payCotisation({
-          feeId: fee._id,
-          creditUsed: toUse,
-          paymentMethod: 'credit',
-          notes: 'Crédit automatique appliqué'
-        });
-        remaining -= toUse;
-      }
+    const { remaining: feeRemaining } = await this.computeFeeState(fee._id);
+    if (feeRemaining <= 0) continue;
+
+    const toUse = Math.min(remaining, feeRemaining);
+    if (toUse > 0) {
+      await this.payCotisation({
+        feeId: fee._id,
+        creditUsed: toUse,
+        paymentMethod: 'credit',
+        notes: 'Crédit automatique appliqué',
+        skipRedistribution: true 
+      });
+
+      remaining -= toUse;
     }
   }
+}
 
   // =============================
   // ❌ CANCEL
   // =============================
-  async cancelFee(feeId) {
-    const cotisation = await Cotisation.findById(feeId);
-    if (!cotisation) throw new Error("Cotisation non trouvée");
-    if (cotisation.cancelled) throw new Error("Cotisation déjà annulée");
+async cancelFee(feeId) {
+  const cotisation = await Cotisation.findById(feeId);
+  if (!cotisation) throw new Error("Cotisation non trouvée");
+  if (cotisation.cancelled) throw new Error("Cotisation déjà annulée");
 
-    const { totalPaid } = await this.computeFeeState(feeId);
-    cotisation.cancelled = true;
-    await cotisation.save();
+  const userId = cotisation.user;
 
-    // Refund any paid amount to user's credit
-    if (totalPaid > 0) {
-      await User.findByIdAndUpdate(cotisation.user, {
-        $inc: { credit: totalPaid }
-      });
-    }
+  // Get total paid amount from NON‑REVERSED payments BEFORE reversing them
+  const nonReversedPayments = await Payment.find({ cotisation: feeId, reversed: false });
+  const totalPaid = nonReversedPayments.reduce((sum, p) => sum + p.amount, 0);
 
-    return this.attachComputed(cotisation);
+  // Mark all payments as reversed (including any that were already reversed – harmless but fine)
+  await Payment.updateMany({ cotisation: feeId }, { reversed: true });
+
+  // Mark fee as cancelled BEFORE redistributing
+  cotisation.cancelled = true;
+  await cotisation.save();
+
+  if (totalPaid > 0) {
+    // Log the refund as a credit transaction
+    await CreditTransaction.create({
+      user: userId,
+      amount: totalPaid,
+      type: 'excess_from_fee',
+      reference: feeId,
+      refModel: 'Cotisation',
+      notes: `Remboursement suite à l'annulation de la cotisation ${cotisation.getTitle()}`
+    });
+    
+    // Add refund to user's credit
+    await User.findByIdAndUpdate(userId, { $inc: { credit: totalPaid } });
+
+    // Use that credit to pay other unpaid fees (oldest first)
+    await this.applyCreditToUnpaidFees(userId, totalPaid);
   }
 
+  return this.attachComputed(cotisation);
+}
 
+async reactivateFee(feeId) {
+  const cotisation = await Cotisation.findById(feeId);
+  if (!cotisation) throw new Error('Cotisation non trouvée');
+  if (!cotisation.cancelled) throw new Error('La cotisation n\'est pas annulée');
+
+  // Reactivate the fee
+  cotisation.cancelled = false;
+  await cotisation.save();
+
+  // Auto‑apply credit after reactivation (same as after creation)
+  const user = await User.findById(cotisation.user);
+  if (user.credit > 0) {
+    await this.applyCreditToUnpaidFees(cotisation.user, user.credit);
+  }
+
+  return this.attachComputed(cotisation);
+}
   // =============================
   // 📦 BULK CREATE
   // =============================
@@ -273,25 +389,42 @@ async bulkCreateFees({ role, wilaya, year, amount, dueDate, notes, feeType, pena
     createdBy: viewerId
   });
 
-  // 2. Find users
+  // 2. Find users with necessary fields (including startDate)
   const filter = {};
   if (role && role !== 'all') filter.role = role;
   if (wilaya && wilaya !== 'all') filter.wilaya = wilaya;
-  const users = await User.find(filter).select('_id');
+  const users = await User.find(filter).select('_id startDate');
   if (!users.length) throw new Error('Aucun utilisateur trouvé');
 
   const created = [];
   const skipped = [];
+  const startDateSkipped = [];
 
   for (const user of users) {
-    // Check if this user already has a fee for same year+type
+    // Check if user's startDate is after the fee's dueDate
+    if (user.startDate) {
+      const startYear = user.startDate.getFullYear();
+      const feeYear = new Date(dueDate).getFullYear();
+      if (startYear > feeYear) {
+        startDateSkipped.push(user._id);
+        continue;
+      }
+      if (user.startDate > new Date(dueDate)) {
+        startDateSkipped.push(user._id);
+        continue;
+      }
+    }
+
+    // Check for existing fee (active or cancelled)
     const existing = await Cotisation.findOne({ user: user._id, year, feeType });
-    if (existing) {
+    if (existing && !existing.cancelled) {
+      // Active fee exists → skip this user
       skipped.push(user._id);
       continue;
     }
+    // If a cancelled fee exists, we do NOT delete it – we simply create a new fee alongside it.
 
-    // Reuse existing createFee method – it will apply credit automatically
+    // Create new fee
     await this.createFee({
       user: user._id,
       viewerId,
@@ -311,6 +444,7 @@ async bulkCreateFees({ role, wilaya, year, amount, dueDate, notes, feeType, pena
     definitionId: definition._id,
     created: created.length,
     skipped: skipped.length,
+    startDateSkipped: startDateSkipped.length,
     total: users.length
   };
 }
@@ -331,7 +465,7 @@ async bulkCreateFees({ role, wilaya, year, amount, dueDate, notes, feeType, pena
     return true;
   }
   //delete a definition
-  async deleteFeeDefinition(defId) {
+async deleteFeeDefinition(defId) {
   const definition = await FeeDefinition.findById(defId);
   if (!definition) throw new Error('Définition non trouvée');
 
@@ -339,25 +473,26 @@ async bulkCreateFees({ role, wilaya, year, amount, dueDate, notes, feeType, pena
   const cotisations = await Cotisation.find({ feeDefinition: defId });
   const feeIds = cotisations.map(c => c._id);
 
-  // Delete all payments & credit transactions for those fees
-  await Payment.deleteMany({ cotisation: { $in: feeIds } });
-  await CreditTransaction.deleteMany({ reference: { $in: feeIds }, refModel: 'Cotisation' });
+  // Cancel each fee (this handles payment reversal and credit redistribution)
+  for (const fee of cotisations) {
+    if (!fee.cancelled) {
+      await this.cancelFee(fee._id);
+    }
+  }
 
-  // Delete the cotisations themselves
-  await Cotisation.deleteMany({ feeDefinition: defId });
+  // await Cotisation.deleteMany({ feeDefinition: defId });
+  // await User.updateMany({ fees: { $in: feeIds } }, { $pull: { fees: { $in: feeIds } } });
 
-  // Remove fee references from users
-  await User.updateMany({ fees: { $in: feeIds } }, { $pull: { fees: { $in: feeIds } } });
+  // Delete the definition
+  definition.isActive= false;
+  definition.save()
 
-  // Finally delete the definition
-  await definition.deleteOne();
-
-  return { deletedDefinitionId: defId, deletedFeesCount: feeIds.length };
+  return { deletedDefinitionId: defId, cancelledFeesCount: cotisations.length };
 }
 
-  // =============================
-  // 🧨 DELETE ALL (cleanup)
-  // =============================
+// =============================
+// 🧨 DELETE ALL (cleanup)
+// =============================
 async deleteAllFees() {
   // 1. Delete all payments
   await Payment.deleteMany({});
@@ -368,14 +503,18 @@ async deleteAllFees() {
   // 3. Delete all cotisations
   const feesDeleted = await Cotisation.deleteMany({});
   
-  // 4. Reset each user's fees array and credit to 0
+  // 4. Delete all fee definitions
+  const definitionsDeleted = await FeeDefinition.deleteMany({});
+  
+  // 5. Reset each user's fees array and credit to 0
   await User.updateMany({}, { $set: { fees: [], credit: 0 } });
   
   return {
     message: "Nettoyage complet effectué",
-    paymentsDeleted: 0, // optional, you could count if needed
-    creditTransactionsDeleted: 0, // optional
+    paymentsDeleted: 0,
+    creditTransactionsDeleted: 0,
     feesDeleted: feesDeleted.deletedCount,
+    definitionsDeleted: definitionsDeleted.deletedCount,
     usersUpdated: 0
   };
 }
@@ -503,7 +642,6 @@ async applyVersement(userId, amount, paymentMethod, notes = '') {
       fromCredit: false, // this is new cash, not from credit
     });
     await payment.save();
-
     feesPaid.push({
       feeId: fee._id,
       year: fee.year,
@@ -546,16 +684,25 @@ async applyVersement(userId, amount, paymentMethod, notes = '') {
 
 async applyRepayment(userId, amount, notes) {
   if (amount >= 0) throw new Error('Le montant doit être négatif pour un remboursement');
+  
   const user = await User.findById(userId);
+  if (!user) throw new Error('Utilisateur non trouvé');
+  
   if (user.credit + amount < 0) throw new Error('Crédit insuffisant');
+  
   user.credit += amount; // amount is negative
   await user.save();
+  
+  // Default note if none provided
+  const defaultNote = `Retrait de ${Math.abs(amount)} DA du crédit. Nouveau solde : ${user.credit} DA.`;
+  
   await CreditTransaction.create({
     user: userId,
     amount, // negative
     type: 'repayment',
-    notes,
+    notes: notes || defaultNote,
   });
+  
   return { newCreditBalance: user.credit };
 }
 

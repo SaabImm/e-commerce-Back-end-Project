@@ -37,7 +37,7 @@ const FeeRoutes = require('./Routes/FeeRoutes')
 const PermissionRoutes = require('./Routes/PermissionsRoutes')
 const PayementRoutes = require('./Routes/PayementRoutes')
 const CreditTransaction = require('./Routes/CreditTransactionRoutes')
-
+const pdfRoutes= require('./Routes/PdfRoutes')
 //define routes
 
 app.use("/user", usersRouter);
@@ -47,6 +47,8 @@ app.use("/admin", AdminRoutes);
 app.use("/fee", FeeRoutes);
 app.use("/payement", PayementRoutes)
 app.use("/credit",CreditTransaction)
+app.use("/pdf",pdfRoutes)
+
 
 
 //config Routes

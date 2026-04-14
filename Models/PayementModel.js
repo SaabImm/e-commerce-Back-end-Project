@@ -15,6 +15,7 @@ const paymentSchema = new mongoose.Schema({
     index: true
   },
 
+  reversed: { type: Boolean, default: false },
   amount: {
     type: Number,
     required: true,

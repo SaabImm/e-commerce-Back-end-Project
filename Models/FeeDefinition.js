@@ -7,7 +7,7 @@ const feeDefinitionSchema = new mongoose.Schema({
   dueDate: { type: Date, required: true },
   feeType: { type: String, enum: ['annual', 'event', 'training', 'exceptional', 'other'], required: true },
   penaltyConfig: {
-    type: { type: String, enum: ['percentage', 'fixed'] },
+    type: { type: String, enum: ['percentage', 'fixed', 'none'] },
     rate: Number,
     frequency: String,
   },
