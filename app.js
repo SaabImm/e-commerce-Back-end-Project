@@ -38,6 +38,8 @@ const PermissionRoutes = require('./Routes/PermissionsRoutes')
 const PayementRoutes = require('./Routes/PayementRoutes')
 const CreditTransaction = require('./Routes/CreditTransactionRoutes')
 const pdfRoutes= require('./Routes/PdfRoutes')
+const ValidationRoutes= require('./Routes/ValidationRoutes')
+
 //define routes
 
 app.use("/user", usersRouter);
@@ -53,6 +55,8 @@ app.use("/pdf",pdfRoutes)
 
 //config Routes
 app.use("/permissions", PermissionRoutes);
+app.use("/validation", ValidationRoutes);
+
 
 
 //MongoDB connection

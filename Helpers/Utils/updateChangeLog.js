@@ -1,10 +1,10 @@
 /**
- * Generic changelog updater
+ * Generic changelog updater (does NOT modify version numbers)
  * @param {Object} doc - Mongoose document (must have a 'changeLog' array)
- * @param {Object} updates - fields to update (e.g., { amount: 150, dueDate: '2025-12-31' })
+ * @param {Object} updates - fields to update
  * @param {string} userId - ID of the user making the change
  * @param {string} reason - optional reason for the change
- * @param {Array} excludeFields - fields to ignore in changelog (e.g., ['updatedAt', '__v'])
+ * @param {Array} excludeFields - fields to ignore in changelog
  * @returns {Object} - the updated document after saving
  */
 async function applyWithChangelog(doc, updates, userId, reason = 'Mise à jour manuelle', excludeFields = ['updatedAt', '__v', 'createdAt', 'changeLog']) {
@@ -12,17 +12,14 @@ async function applyWithChangelog(doc, updates, userId, reason = 'Mise à jour m
     throw new Error('Document does not have a changeLog array');
   }
 
-  // Normalise values for reliable comparison
   function normalize(value) {
     if (value === null || value === undefined) return value;
     if (value instanceof Date) return value.toISOString();
     if (typeof value === 'string' && !isNaN(Date.parse(value))) {
-      // Date string -> ISO string
       return new Date(value).toISOString();
     }
     if (typeof value === 'number') return value;
     if (typeof value === 'string' && !isNaN(parseFloat(value))) {
-      // Numeric string -> number
       return parseFloat(value);
     }
     return value;
@@ -32,7 +29,6 @@ async function applyWithChangelog(doc, updates, userId, reason = 'Mise à jour m
     const normOld = normalize(oldVal);
     const normNew = normalize(newVal);
     if (normOld === normNew) return false;
-    // For objects/arrays, deep compare
     if (typeof normOld === 'object' && typeof normNew === 'object') {
       return JSON.stringify(normOld) !== JSON.stringify(normNew);
     }
@@ -50,20 +46,17 @@ async function applyWithChangelog(doc, updates, userId, reason = 'Mise à jour m
         oldValue: oldValue,
         newValue: newValue
       });
-      // Apply the update (keep the incoming value as-is)
       doc[key] = newValue;
     }
   }
 
   if (changes.length === 0) return doc;
 
-  // Version handling (if your document has a version field)
+  // Record the current version (if any) but never change it
   const currentVersion = doc.version !== undefined ? doc.version : null;
-  const newVersion = currentVersion !== null ? currentVersion + 1 : null;
-  if (newVersion !== null) doc.version = newVersion;
 
   doc.changeLog.push({
-    version: currentVersion !== null ? newVersion : doc.changeLog.length + 1,
+    version: currentVersion, // store current version for audit
     changedAt: new Date(),
     changedBy: userId,
     changes: changes,

@@ -1,8 +1,7 @@
 // Services/PermissionService.js
 const PermissionSchema = require('../Models/PermissionsModel');
 const User = require('../Models/UsersModels');
-const File = require('../Models/FilesModels');
-
+const VersioningService = require('../Services/VersioningService')
 class PermissionService {
   constructor() {}
 
@@ -16,7 +15,25 @@ class PermissionService {
     };
     return levels[roleName] || 0;
   }
+      // Helper to merge fields
+    mergeFields(existingFields, changedFields = []) {
+    if (!changedFields.length) return existingFields;
+    const fieldMap = new Map(existingFields.map(f => [f.name, f]));
+    for (const cf of changedFields) {
+      fieldMap.set(cf.name, cf);
+    }
+    return Array.from(fieldMap.values());
+  }
 
+    // Helper to merge operations
+  mergeOperations(existingOps, changedOps = []) {
+    if (!changedOps.length) return existingOps;
+    const opMap = new Map(existingOps.map(o => [o.operation, o]));
+    for (const co of changedOps) {
+      opMap.set(co.operation, co);
+    }
+    return Array.from(opMap.values());
+  }
   // Get permissions for a specific user and model (handles targetId = null)
   async getUserPermissions(viewerId, targetId, model, tenantId = null) {
     try {
@@ -185,138 +202,80 @@ class PermissionService {
     };
   }
 
-  // Initialize default permission schemas
-  async initializeDefaultSchemas(createdBy = null, model, schemaDefinition) {
-    const newSchema = {
-      model: model,
-      version: 1,
-      isActive: true,
-      activatedAt: new Date(),
-      tenantId: null,
-      createdBy,
-      updatedBy: createdBy,
-      fields: schemaDefinition.fields || [],
-      operations: schemaDefinition.operations || []
-    };
-
-    const results = { created: [], errors: [] };
-
-    try {
-      const exists = await PermissionSchema.findOne({
-        model,
-        tenantId: null,
-        isActive: true
-      });
-      if (!exists) {
-        const created = await PermissionSchema.create(newSchema);
-        results.created.push({ model, id: created._id });
-        console.log(`✅ Created default permission schema for ${model}:`, created._id);
-      } else {
-        results.created.push({ model, id: exists._id, message: 'Already exists' });
-        console.log(`ℹ️ Schema for ${model} already exists:`, exists._id);
-      }
-    } catch (error) {
-      results.errors.push({ model, error: error.message });
-      console.error(`❌ Error creating schema for ${model}:`, error.message);
-    }
-
-    return results;
-  }
-
-  // Create a new version from old version merged with new changes
+  // Create a new version with custom merging for fields/operations
   async createNewVersion(changes, changedBy, status, model) {
-    const highestVersionDoc = await PermissionSchema.findOne({ model }).sort({ version: -1 });
-    const highestVersion = highestVersionDoc ? highestVersionDoc.version : 0;
-
     const current = await PermissionSchema.findOne({ model, isActive: true });
     if (!current) throw new Error('No active schema found');
 
-    // Merge fields
-    const mergedFields = [];
+    const mergedFields = this.mergeFields(current.fields, changes.fields);
+    const mergedOperations = this.mergeOperations(current.operations, changes.operations);
 
-    current.fields.forEach(existingField => {
-      const changedField = changes.fields?.find(cf => cf.name === existingField.name);
-      if (changedField) {
-        mergedFields.push(changedField);
-      } else {
-        mergedFields.push(existingField);
-      }
-    });
-
-    changes.fields?.forEach(changedField => {
-      const exists = current.fields.some(ef => ef.name === changedField.name);
-      if (!exists) mergedFields.push(changedField);
-    });
-
-    // Merge operations
-    const mergedOperations = [];
-
-    current.operations.forEach(existingOp => {
-      const changedOp = changes.operations?.find(co => co.operation === existingOp.operation);
-      if (changedOp) {
-        mergedOperations.push(changedOp);
-      } else {
-        mergedOperations.push(existingOp);
-      }
-    });
-
-    changes.operations?.forEach(changedOp => {
-      const exists = current.operations.some(eo => eo.operation === changedOp.operation);
-      if (!exists) mergedOperations.push(changedOp);
-    });
-
-    const newVersion = {
+    const newDocData = {
       ...current.toObject(),
       _id: undefined,
-      model,
-      version: highestVersion + 1,
-      isActive: true,
-      activatedAt: new Date(),
-      updatedBy: changedBy,
-      status: status || "active",
+      createdAt: undefined,
+      updatedAt: undefined,
+      __v: undefined,
       fields: mergedFields,
-      operations: mergedOperations
+      operations: mergedOperations,
+      status: status || 'active'
     };
 
-    // Deactivate old version
-    current.isActive = false;
-    current.status = status || "archived";
-    current.deactivatedAt = new Date();
-    await current.save();
-
-    return PermissionSchema.create(newVersion);
+    return await VersioningService.createNewVersionFromData(
+      PermissionSchema,
+      current,
+      newDocData,
+      changedBy,
+      { newStatus: status, deactivateStatus: 'archived', reason: changes.reason || 'New version created' }
+    );
   }
 
   // Update an inactive version
   async updateVersion(versionId, updates, userId) {
-    const version = await PermissionSchema.findById(versionId);
-    if (!version) throw new Error('Version non trouvée');
-
-    if (version.isActive) {
-      throw new Error('Impossible de modifier une version active. Créez une nouvelle version.');
-    }
-
-    if (updates.fields !== undefined) version.fields = updates.fields;
-    if (updates.operations !== undefined) version.operations = updates.operations;
-    if (updates.status !== undefined) version.status = updates.status;
-
-    version.changeLog.push({
-      version: version.version,
-      changedAt: new Date(),
-      changedBy: userId,
-      changes: [{
-        field: 'schema',
-        oldValue: 'previous',
-        newValue: 'updated'
-      }],
-      reason: updates.reason || 'Mise à jour manuelle'
-    });
-
-    version.updatedBy = userId;
-    await version.save();
-
-    return version;
+    return await VersioningService.updateInactiveVersion(PermissionSchema, versionId, updates, userId, updates.reason);
   }
+
+  // Rollback to previous non‑flawed version
+  async rollback(model, userId, options = {}) {
+    // Find the currently active version for this model
+    const activeVersion = await PermissionSchema.findOne({ model, isActive: true }).sort({ version: -1 });
+    if (!activeVersion) throw new Error('No active version found');
+    const docId = activeVersion._id; // ID of the active version document
+    return await VersioningService.rollback(PermissionSchema, docId, userId, options);
+  }
+
+  // Reactivate a specific version (by ID)
+  async reactivateVersion(versionId, userId, options = {}) {
+    return await VersioningService.reactivateVersion(PermissionSchema, versionId, userId, options);
+  }
+
+  async initializeDefaultSchemas(createdBy, model, schemaDefinition) {
+  const filter = { model, tenantId: null };
+  try {
+    const existing = await PermissionSchema.findOne(filter);
+    if (existing) {
+      console.log(`ℹ️ Schema for ${model} already exists:`, existing._id);
+      return { created: [{ model, id: existing._id, message: 'Already exists' }], errors: [] };
+    }
+    const newDoc = await VersioningService.initializeFirstVersion(
+      PermissionSchema,
+      filter,
+      {
+        model,
+        tenantId: null,
+        fields: schemaDefinition.fields || [],
+        operations: schemaDefinition.operations || [],
+        status: 'active'
+      },
+      createdBy
+    );
+    console.log(`✅ Created default permission schema for ${model}:`, newDoc._id);
+    return { created: [{ model, id: newDoc._id }], errors: [] };
+  } catch (error) {
+    console.error(`❌ Error creating schema for ${model}:`, error.message);
+    return { created: [], errors: [{ model, error: error.message }] };
+  }
+}
 }
 
 module.exports = new PermissionService();
