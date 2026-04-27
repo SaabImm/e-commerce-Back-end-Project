@@ -81,7 +81,7 @@ class VersioningService {
   /**
    * Rollback to the latest non‑flawed version (or to a specific version).
    */
-  async rollback(model, docId, userId, options = {}) {
+  async rollback(model, familyFilter, userId, options = {}) {
     const {
       targetVersion = null,
       excludeStatuses = ['flawed'],
@@ -90,39 +90,38 @@ class VersioningService {
       reason = 'Rollback'
     } = options;
 
-    const current = await model.findOne({ _id: docId, isActive: true });
+    const current = await model.findOne({ ...familyFilter, isActive: true });
     if (!current) throw new Error('No active version found');
 
     let rollbackDoc;
     if (targetVersion) {
-      rollbackDoc = await model.findOne({model: current.model, version: targetVersion });
+      rollbackDoc = await model.findOne({ ...familyFilter, version: targetVersion });
       if (!rollbackDoc) throw new Error(`Version ${targetVersion} not found`);
-
     } else {
       rollbackDoc = await model.findOne({
-        model: current.model,
+        ...familyFilter,
         version: { $lt: current.version },
         status: { $nin: excludeStatuses }
       }).sort({ version: -1 });
       if (!rollbackDoc) throw new Error('No suitable version to rollback to');
     }
 
-    // Deactivate current using applyWithChangelog
     await applyWithChangelog(
       current,
       { isActive: false, status: deactivateStatus, deactivatedAt: new Date() },
       userId,
       `${reason} to version ${rollbackDoc.version}`,
-      ['updatedAt', '__v', 'createdAt', 'changeLog', 'deactivatedAt']
+      ['updatedAt', '__v', 'createdAt', 'changeLog', 'deactivatedAt'],
+      false
     );
 
-    // Reactivate rollback version
     await applyWithChangelog(
       rollbackDoc,
       { isActive: true, status: newStatus },
       userId,
       `${reason} from version ${current.version}`,
-      ['updatedAt', '__v', 'createdAt', 'changeLog']
+      ['updatedAt', '__v', 'createdAt', 'changeLog'],
+      false
     );
 
     return rollbackDoc;
@@ -131,24 +130,23 @@ class VersioningService {
   /**
    * Activate a specific version (deactivates current active).
    */
-  async reactivateVersion(model, versionId, userId, options = {}) {
+  async reactivateVersion(model, familyFilter, versionId, userId, options = {}) {
     const { deactivateStatus = 'archived', newStatus = 'active', reason = 'Reactivated' } = options;
-     const versionToActivate = await model.findById(versionId);
-    const current = await model.findOne({model: versionToActivate.model, isActive: true });
-   
+
+    const versionToActivate = await model.findById(versionId);
     if (!versionToActivate) throw new Error('Version not found');
     if (versionToActivate.isActive) throw new Error('Version is already active');
     if (versionToActivate.status === 'flawed') throw new Error('Cannot reactivate a flawed version');
 
-   
-
+    const current = await model.findOne({ ...familyFilter, isActive: true });
     if (current) {
       await applyWithChangelog(
         current,
         { isActive: false, status: deactivateStatus, deactivatedAt: new Date() },
         userId,
         `${reason} to version ${versionToActivate.version}`,
-        ['updatedAt', '__v', 'createdAt', 'changeLog', 'deactivatedAt']
+        ['updatedAt', '__v', 'createdAt', 'changeLog', 'deactivatedAt'],
+        false
       );
     }
 
@@ -157,7 +155,8 @@ class VersioningService {
       { isActive: true, status: newStatus },
       userId,
       reason,
-      ['updatedAt', '__v', 'createdAt', 'changeLog']
+      ['updatedAt', '__v', 'createdAt', 'changeLog'],
+      false
     );
 
     return versionToActivate;

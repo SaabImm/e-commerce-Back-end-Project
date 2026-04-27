@@ -1,47 +1,39 @@
 const express = require("express");
 const router = express.Router();
 const UserController = require("../Controller/UserController");
+const authenticate = require("../Middleware/Authenticate");
+const userOwnership = require("../Middleware/UserOwnership");
 
-const authenticate= require("../Middleware/Authenticate")
-const userOwnership = require("../Middleware/UserOwnership")
+// ===================== PUBLIC / NON‑RESTRICTED =====================
+// (none – all user routes require authentication)
 
-// Only admin can get all users
+// ===================== AUTHENTICATED ROUTES =====================
 
-//router.get('/', UserController.getAllUsers);
+// Get current user statistics (admin only)
+router.get("/stats", authenticate, UserController.getUserStats);
 
+// Get user by ID (authenticated, permission checks inside controller)
+router.get("/:id", authenticate, UserController.getUserById);
 
-// Get user by ID - authenticated
+// Get users by role (admin only)
+router.get("/role/:role", authenticate, UserController.getAllByRole);
 
-router.get('/stats', authenticate, UserController.getUserStats);
+// Create a new user (admin only)
+router.post("/", authenticate, UserController.createUser);
 
-router.get('/:id', authenticate, UserController.getUserById);
+// Update a user (authenticated, password confirmation required)
+router.patch("/:id", authenticate, UserController.updateUser);
 
+// Delete a user (admin or owner, checked in service)
+router.delete("/:id", authenticate, UserController.deleteUserById);
 
-// Only admin can get users by role
-router.get('/role=/:role', UserController.getAllByRole);
+// Reset password (authenticated, userOwnership ensures only the user themselves)
+router.patch("/psw/:id", authenticate, userOwnership(true), UserController.resetPassword);
 
-// Create user - requires auth (admin)
-router.post('/', authenticate,UserController.createUser);
+// Validate a user (admin only – add admin check inside controller or middleware)
+router.patch("/validate/:id", authenticate, UserController.validateUser);
 
-
-router.patch('/:id', authenticate, UserController.updateUser);
-
-
-// Delete a specific user - authenticated (admin or owner check in controller)
-router.delete('/:id', authenticate, UserController.deleteUserById);
-
-// Update one's profile - authenticated (admin or owner)
-router.patch('/me/:id',authenticate, UserController.updateUser);
-
-
-//updatepsw
-router.patch('/psw/:id',authenticate, userOwnership(true), UserController.resetPassword);
-
-// Reset user - authenticated (admin only)
-router.put('/:id', UserController.resetUser);
-
-//validate user
-router.patch('/validate/:id', UserController.validateUser);
-
+// Optional: delete all users (super_admin only)
+router.delete("/all", authenticate, UserController.deleteAllUsers);
 
 module.exports = router;

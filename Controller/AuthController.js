@@ -4,6 +4,8 @@ const jwt = require("jsonwebtoken");
 const {sendVerificationEmail} = require("../Middleware/sendEmail")
 const Cotisation = require('../Models/FeesModel');
 const FeeDefinition = require('../Models/FeeDefinition')
+const ValidationService = require('../Services/ValidationService')
+
 
 exports.login = async (req, res) => {
   try {
@@ -164,7 +166,8 @@ exports.signup = async (req, res) => {
       role: "user",
       sexe,
       startDate: startDate ? new Date(startDate) : new Date(),
-      registrationNumber
+      registrationNumber,
+      isAdminVerified: false // initially not verified
     };
     if (dateOfBirth) {
       userData.dateOfBirth = dateOfBirth;
@@ -178,14 +181,12 @@ exports.signup = async (req, res) => {
     const startYear = savedUser.startDate.getFullYear();
     const currentYear = new Date().getFullYear();
 
-    // Find all active fee definitions from startYear to currentYear
     const feeDefinitions = await FeeDefinition.find({
       year: { $gte: startYear, $lte: currentYear },
       isActive: true
     }).sort({ year: 1, feeType: 1 });
 
     for (const def of feeDefinitions) {
-      // Avoid duplicate cotisations for the same user/year/type
       const existing = await Cotisation.findOne({
         user: savedUser._id,
         year: def.year,
@@ -193,7 +194,6 @@ exports.signup = async (req, res) => {
       });
       if (existing) continue;
 
-      // Create individual cotisation linked to the definition
       const cotisation = new Cotisation({
         user: savedUser._id,
         feeDefinition: def._id,
@@ -207,15 +207,26 @@ exports.signup = async (req, res) => {
         cancelled: false
       });
       await cotisation.save();
-
-      // Add reference to user's fees array
-      if (!savedUser.fees) savedUser.fees = [];
+      savedUser.fees = savedUser.fees || [];
       savedUser.fees.push(cotisation._id);
     }
 
     await savedUser.save();
 
-    // Generate verification token
+    // --- Create validation request for the new user ---
+    try {
+      await ValidationService.createValidationRequest(
+        savedUser._id,
+        'User',
+        'Admin approval for new users', // schema name; adjust as needed
+        savedUser._id // createdBy = the user themselves (or could be a system ID)
+      );
+    } catch (err) {
+      console.error('Failed to create validation request for user:', err);
+      // Do not block signup; user will be unverified until manually validated
+    }
+
+    // Generate verification token (email verification)
     const token = jwt.sign(
       { id: savedUser._id, role: savedUser.role },
       process.env.JWT_SECRET,
@@ -237,5 +248,4 @@ exports.signup = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
-
 

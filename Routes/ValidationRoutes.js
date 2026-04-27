@@ -8,6 +8,7 @@ router.post('/schemas', authenticate, validationController.createValidationSchem
 router.put('/schemas/:id', authenticate, validationController.updateValidationSchema);
 router.get('/schemas', authenticate, validationController.getAllValidationSchemas);
 router.get('/schemas/:id', authenticate, validationController.getValidationSchemaById);
+router.get('/schemas/:schemaId/versions', authenticate, validationController.getSchemaVersions);
 router.post('/schemas/:id/rollback', authenticate , validationController.rollbackValidationSchema);
 router.post('/schemas/:id/reactivateVersion', authenticate , validationController.reactivateValidationSchema);
 
@@ -16,7 +17,8 @@ router.post('/schemas/:id/reactivateVersion', authenticate , validationControlle
 router.post('/requests', authenticate, validationController.createValidationRequest);
 router.patch('/requests/:requestId/approve/:stepOrder', authenticate, validationController.approveStep);
 router.patch('/requests/:requestId/reject/:stepOrder', authenticate, validationController.rejectStep);
-router.get('/requests/:id', authenticate, validationController.getValidationRequest);
+router.get('/requests/approver', authenticate, validationController.getRequestsForApprover);
+router.get('/request/:id', authenticate, validationController.getValidationRequest);
 router.get('/requests/user/:userId', authenticate, validationController.getUserValidationRequests);
 router.patch('/requests/:id/cancel', authenticate, validationController.cancelValidationRequest);
 router.patch('/requests/:requestId/skip/:stepOrder', authenticate, validationController.skipStep);

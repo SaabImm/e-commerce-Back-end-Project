@@ -38,9 +38,24 @@ exports.updateValidationSchema = async (req, res) => {
 
 exports.getAllValidationSchemas = async (req, res) => {
   try {
-    const { targetType } = req.query;
-    const schemas = await ValidationService.getAllActiveSchemas(targetType);
-    res.json(schemas);
+    const { targetType, includeInactive = false } = req.query;
+    const schemas = await ValidationService.getAllValidationSchemas(targetType, includeInactive === 'true');
+    res.json({ schemas });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getSchemaVersions = async (req, res) => {
+  try {
+    const { schemaId } = req.params;
+    const schema = await ValidationSchema.findById(schemaId);
+    if (!schema) return res.status(404).json({ error: 'Schema not found' });
+    const versions = await ValidationSchema.find({
+      targetType: schema.targetType,
+      name: schema.name
+    }).sort({ version: -1 });
+    res.json({ versions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -58,7 +73,7 @@ exports.getValidationSchemaById = async (req, res) => {
 
 exports.rollbackValidationSchema = async (req, res) => {
   try {
-    const { id } = req.params; // can be any version ID, we'll extract base _id in service
+    const { id } = req.params;
     const userId = req.user._id;
     const { targetVersion, reason, newStatus = 'active', deactivateStatus = 'archived' } = req.query;
 
@@ -143,7 +158,6 @@ exports.approveStep = async (req, res) => {
     const { requestId, stepOrder } = req.params;
     const { comments } = req.body;
     const userId = req.user._id;
-
     const updated = await ValidationService.approveStep(requestId, parseFloat(stepOrder), userId, comments);
     res.json(updated);
   } catch (error) {
@@ -168,17 +182,43 @@ exports.getValidationRequest = async (req, res) => {
   try {
     const request = await ValidationRequest.findById(req.params.id)
       .populate('validationSchemaId')
-      .populate('createdBy', 'name lastname email');
+      .populate('targetId', 'name lastname email');
     if (!request) return res.status(404).json({ error: 'Request not found' });
-
-    // Permission check: only creator, admins, or approvers can view
-    const isCreator = request.createdBy && request.createdBy._id.toString() === req.user._id.toString();
-    const isAdmin = ['admin', 'super_admin'].includes(req.user.role);
-    if (!isCreator && !isAdmin) {
-      return res.status(403).json({ error: 'Unauthorised' });
-    }
     res.json(request);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getRequestsForApprover = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const userRole = req.user.role;
+    const { status } = req.query;
+
+    const filter = { status: { $in: ['pending', 'partial', 'cancelled'] } };
+    if (status && status !== 'all') filter.status = status;
+
+    const requests = await ValidationRequest.find(filter)
+      .populate('createdBy', 'name lastname')
+      .populate('targetId', 'name lastname full');
+
+    // Filter to keep only requests where the user is the approver for the FIRST pending step
+    const approvableRequests = requests.filter(req => {
+      // Find the first pending step (lowest order)
+      const nextStep = req.steps
+        .filter(s => s.status === 'pending')
+        .sort((a, b) => a.order - b.order)[0];
+      if (!nextStep) return false;
+      // Check role or explicit user list
+      const hasRole = nextStep.requiredRole === userRole;
+      const isAllowedUser = nextStep.allowedUserIds && nextStep.allowedUserIds.some(id => id.toString() === userId.toString());
+      return hasRole || isAllowedUser;
+    });
+
+    res.json({ requests: approvableRequests });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: error.message });
   }
 };

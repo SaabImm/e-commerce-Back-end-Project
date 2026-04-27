@@ -1,540 +1,133 @@
-const mongoose = require('mongoose');
-const User = require('../Models/UsersModels')
-const cloudinary = require('../Config/claudinary');
-const File = require('../Models/FilesModels')
-const Cotisation = require ('../Models/FeesModel') 
-const Payment= require('../Models/PayementModel')
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
-const PermissionService = require('../Services/PermissionService');
-const FeeDefinition = require('../Models/FeeDefinition')
+
+const UserService = require('../Services/UserService');
+const { validateObjectId, handleError } = require('../Helpers/Utils/ControllerHelpers');
 
 exports.getAllUsers = async (req, res) => {
   try {
-    const viewerId = req.user._id; // l'ID du viewer est déjà un ObjectId valide
-
-    // Récupérer tous les utilisateurs (vous pourrez plus tard ajouter un filtre par tenant)
-    const allUsers = await User.find().populate('fees');
-
-    if (!allUsers.length) {
-      return res.status(404).json({ message: "Aucun utilisateur trouvé" });
-    }
-
-    // Vérifier pour chaque utilisateur si le viewer a le droit de lecture
-    const permissions = await Promise.all(
-      allUsers.map(async (user) => {
-        const canRead = await PermissionService.canPerform(viewerId, user._id, "read", 'User');
-        return { user, canRead };
-      })
-    );
-
-    // Ne garder que ceux pour lesquels canRead est true
-    const allowedUsers = permissions.filter(p => p.canRead).map(p => p.user);
-
-    res.json({
-      users: allowedUsers,
-      message: "Données récupérées avec succès"
-    });
+    const users = await UserService.getAllUsers(req.user._id);
+    if (!users.length) return res.status(404).json({ message: "Aucun utilisateur trouvé" });
+    res.json({ users, message: "Données récupérées avec succès" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erreur  serveur', error });
+    handleError(res, error);
   }
 };
 
 exports.getUserById = async (req, res) => {
   try {
-    const targetId = req.params.id;
-    const viewerId = req.user.id;
-
-    if (!mongoose.isValidObjectId(targetId)) {
-      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
-    }
-
-    const targetUser = await User.findById(targetId)
-      .populate("files")
-      .populate("fees");
-    if (!targetUser) {
-      return res.status(404).json({ message: "User Not Found !!" });
-    }
-
-    const canPerform = await PermissionService.canPerform(viewerId, targetId, "read", 'User');
-    if (!canPerform) {
-      return res.status(403).json({ message: "Unauthorized!!" });
-    }
-
-    return res.json({
-      message: "User Found",
-      user: targetUser
-    });
+    const { id } = req.params;
+    if (!validateObjectId(id, res)) return;
+    const user = await UserService.getUserById(req.user.id, id);
+    res.json({ message: "User Found", user });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server Error', error: error.message });
+    if (error.message === 'User not found') return res.status(404).json({ message: error.message });
+    if (error.message === 'Unauthorised') return res.status(403).json({ message: error.message });
+    handleError(res, error);
   }
 };
 
 exports.createUser = async (req, res) => {
   try {
-    const viewerId = req.user.id || req.user._id;
-    const { password, ...otherFields } = req.body;
-
-    // 1. Basic password check
-    if (!password) {
-      return res.status(400).json({ message: "Password required" });
-    }
-
-    // 2. Check create operation permission
-    const canCreate = await PermissionService.canPerform(viewerId, viewerId, "create", 'User');
-    if (!canCreate) {
-      return res.status(403).json({ message: "Unauthorized operation" });
-    }
-
-    // 3. Get creatable fields for this viewer
-    const creatable = await PermissionService.getCreatableFields(viewerId, viewerId, 'User');
-    const allowedFields = creatable.fields;
-
-    // 4. Build user data using only allowed fields
-    const userData = {};
-    allowedFields.forEach(field => {
-      if (otherFields[field] !== undefined) {
-        userData[field] = otherFields[field];
-      }
-    });
-
-    // 5. Hash password and add it
-    const hashedPassword = await bcrypt.hash(password, 10);
-    userData.password = hashedPassword;
-
-    // 6. Check duplicates
-    if (userData.email) {
-      const existingEmail = await User.findOne({ email: userData.email });
-      if (existingEmail) {
-        return res.status(409).json({ message: "Email already exists" });
-      }
-    }
-    if (userData.registrationNumber) {
-      const existingRegnbr = await User.findOne({ registrationNumber: userData.registrationNumber });
-      if (existingRegnbr) {
-        return res.status(409).json({ message: "Registration Number already exists" });
-      }
-    }
-
-    userData.createdBy = viewerId;
-
-    // 7. Create and save the user
-    const newUser = new User(userData);
-    const savedUser = await newUser.save();
-
-    // ==============================================================
-    // 8. Auto‑create cotisations based on FeeDefinition campaigns
-    // ==============================================================
-    const startYear = savedUser.startDate ? savedUser.startDate.getFullYear() : new Date().getFullYear();
-    const currentYear = new Date().getFullYear();
-
-    // Find all active fee definitions for years from startYear to currentYear
-    const feeDefinitions = await FeeDefinition.find({
-      year: { $gte: startYear, $lte: currentYear },
-      isActive: true
-    }).sort({ year: 1, feeType: 1 });
-
-    for (const def of feeDefinitions) {
-      // Avoid duplicate cotisations (same user, year, type)
-      const existing = await Cotisation.findOne({
-        user: savedUser._id,
-        year: def.year,
-        feeType: def.feeType
-      });
-      if (existing) continue;
-
-      // Create individual cotisation linked to the definition
-      const cotisation = new Cotisation({
-        user: savedUser._id,
-        feeDefinition: def._id,
-        year: def.year,
-        amount: def.amount,
-        dueDate: def.dueDate,
-        feeType: def.feeType,
-        penaltyConfig: def.penaltyConfig,
-        notes: `Cotisation automatique à la création du compte (${def.title})`,
-        createdBy: viewerId,
-        cancelled: false
-      });
-      await cotisation.save();
-
-      // Add reference to user's fees array
-      if (!savedUser.fees) savedUser.fees = [];
-      savedUser.fees.push(cotisation._id);
-    }
-
-    // Save the updated user with fees array
-    await savedUser.save();
-
-    // 9. Return response
-    return res.status(201).json({
-      message: "User created successfully with mandatory fees",
-      user: savedUser
-    });
+    const { password, ...userData } = req.body;
+    const savedUser = await UserService.createUser(req.user._id, userData, password);
+    res.status(201).json({ message: "User created successfully with mandatory fees", user: savedUser });
   } catch (error) {
-    console.error("Create user error:", error);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+    if (error.message === 'Unauthorised operation') return res.status(403).json({ message: error.message });
+    if (error.message === 'Email already exists' || error.message === 'Registration Number already exists')
+      return res.status(409).json({ message: error.message });
+    handleError(res, error, "Create user error");
   }
-};
-exports.deleteUserById = async (req, res) => {
-  try {
-    const targetId = req.params.id;
-    const viewerId = req.user.id;
-
-    // Vérifier la validité de l'ID
-    if (!mongoose.Types.ObjectId.isValid(targetId)) {
-      return res.status(400).json({ message: "Format d'ID invalide" });
-    }
-
-    // Vérifier la permission de suppression sur l'utilisateur
-    const canDelete = await PermissionService.canPerform(viewerId, targetId, "delete", 'User');
-    if (!canDelete) {
-      return res.status(403).json({ message: "Opération non autorisée !" });
-    }
-
-    // Récupérer l'utilisateur avec ses fichiers (pour obtenir les fileIds Cloudinary)
-    const user = await User.findById(targetId).populate('files');
-    if (!user) {
-      return res.status(404).json({ message: "Utilisateur non trouvé" });
-    }
-
-    // 1. Supprimer les fichiers de Cloudinary et de la base de données
-    if (user.files && user.files.length > 0) {
-      for (const file of user.files) {
-        // Supprimer de Cloudinary si le fichier a un fileId
-        if (file.fileId) {
-          try {
-            await cloudinary.uploader.destroy(file.fileId);
-          } catch (cloudErr) {
-            console.error(`Erreur lors de la suppression du fichier ${file.fileId} de Cloudinary:`, cloudErr);
-            // On continue, on ne bloque pas la suppression complète
-          }
-        }
-        // Supprimer le document File de la base
-        await File.findByIdAndDelete(file._id);
-      }
-    }
-
-    // 2. Supprimer toutes les cotisations associées à cet utilisateur
-    await Cotisation.deleteMany({ user: targetId });
-
-    //supprimer aussi les paiements relatifs a cet utilisateur
-    await Payment.deleteMany({ user: targetId });
-    
-    // 3. Enfin, supprimer l'utilisateur lui-même
-    await User.findByIdAndDelete(targetId);
-
-    res.status(200).json({
-      message: `Utilisateur ${user.email} et toutes ses données associées ont été supprimés`,
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-};
-exports.deleteAllUsers= async (req, res) =>{
-  try{
-    //this will also verify roles later
-    const dataCount= await User.countDocuments();
-    if(dataCount === 0){
-      return res.status(404).json({message : "No users found"})
-    }
-    await User.deleteMany({});
-    return res.json({message : "Users deleted successfully!!"})
-  }
-   catch(error){
-    res.status(500).json({message: 'Server Error', error: error})
-   }
 };
 
 exports.updateUser = async (req, res) => {
   try {
-    const targetId = req.params.id;
-    const viewerId = req.user._id; 
-
-    const viewer = await User.findById(viewerId).select("+password");
-    if (!viewer) {
-      return res.status(404).json({ message: "VIEWER not found" });
-    }
-
-    const targetUser = await User.findById(targetId).select("+password").populate("files");
-    if (!targetUser) {
-      return res.status(404).json({ message: "Target User not found" });
-    }
-
-    const canUpdate = await PermissionService.canPerform(viewerId, targetId, "update", 'User');
-    if (!canUpdate) {
-      return res.status(403).json({ message: "Unauthorized operation!" });
-    }
-
+    const { id } = req.params;
     const { password, ...updates } = req.body;
+    if (!password) return res.status(400).json({ message: "Password required" });
+    const { user, token } = await UserService.updateUser(req.user._id, id, updates, password);
+    res.status(200).json({ message: "User updated", user, token });
+  } catch (error) {
+    if (error.message === 'Target user not found') return res.status(404).json({ message: error.message });
+    if (error.message === 'Unauthorised operation') return res.status(403).json({ message: error.message });
+    if (error.message === 'Wrong password') return res.status(401).json({ message: error.message });
+    if (error.message === 'No fields to update') return res.status(400).json({ message: error.message });
+    handleError(res, error, "Update user error");
+  }
+};
 
-    if (!password) {
-      return res.status(400).json({ message: "Password required" });
-    }
-    const isMatch = await bcrypt.compare(password, viewer.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Wrong password" });
-    }
+exports.deleteUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!validateObjectId(id, res)) return;
+    const email = await UserService.deleteUser(req.user.id, id);
+    res.status(200).json({ message: `User ${email} and all associated data deleted` });
+  } catch (error) {
+    if (error.message === 'User not found') return res.status(404).json({ message: error.message });
+    if (error.message === 'Unauthorised operation') return res.status(403).json({ message: error.message });
+    handleError(res, error);
+  }
+};
 
-    const editableFields = await PermissionService.getEditableFields(viewerId, targetId, 'User');
-    const allowedFields = editableFields.permissions.canUpdate;
-
-    if (allowedFields.length === 0) {
-      return res.status(400).json({ message: "No fields to update" });
-    }
-
-    allowedFields.forEach((field) => {
-      if (updates[field] !== undefined) {
-        targetUser[field] = updates[field];
-      }
-    });
-    targetUser.updatedBy= viewerId;
-    const updatedUser = await targetUser.save();
-
-    const token = jwt.sign(
-      { id: updatedUser._id, role: updatedUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "15h" }
-    );
-
-    return res.status(200).json({
-      message: "User updated",
-      user: updatedUser,
-      token,
-    });
-  } catch (err) {
-    console.error("Update user error:", err);
-    return res.status(500).json({ message: "Server error" });
+exports.deleteAllUsers = async (req, res) => {
+  try {
+    const count = await UserService.deleteAllUsers(req.user._id);
+    res.json({ message: `${count} user(s) deleted successfully` });
+  } catch (error) {
+    if (error.message === 'Only super_admin can delete all users') return res.status(403).json({ message: error.message });
+    if (error.message === 'No users found') return res.status(404).json({ message: error.message });
+    handleError(res, error);
   }
 };
 
 exports.resetPassword = async (req, res) => {
   try {
     const { id } = req.params;
-    const viewerId = req.user.id || req.user._id;
     const { currentPassword, newPassword } = req.body;
-
-    // Validation de l'ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "ID invalide" });
-    }
-
-    // Vérification des permissions
-    const canUpdate = await PermissionService.canPerform(viewerId, id, "update", 'User');
-    if (!canUpdate) {
-      return res.status(403).json({ message: "Opération non autorisée" });
-    }
-
-    // const editableFields = await PermissionService.getEditableFields(viewerId, id, 'User');
-    // if (!editableFields.permissions.canUpdate.includes("password")) {
-    //   return res.status(403).json({ message: "Vous ne pouvez pas modifier le mot de passe" });
-    // }
-
-    // Récupération de l'utilisateur (avec le mot de passe)
-    const user = await User.findById(id).select("+password");
-    if (!user) {
-      return res.status(404).json({ message: "Utilisateur non trouvé" });
-    }
-
-    // Vérification du délai depuis le dernier changement
-    if (user.passwordChangedAt) {
-      const heuresDepuis = (Date.now() - user.passwordChangedAt) / (1000 * 60 * 60);
-      if (heuresDepuis < 24) {
-        const heuresRestantes = Math.ceil(24 - heuresDepuis);
-        return res.status(429).json({
-          message: `Vous ne pouvez changer votre mot de passe qu'une fois toutes les 24 heures. Réessayez dans ${heuresRestantes} heure(s).`
-        });
-      }
-    }
-
-    // Vérification de l'ancien mot de passe
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Mot de passe actuel incorrect" });
-    }
-
-    // Hash du nouveau mot de passe
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Mise à jour de l'utilisateur
-    user.password = hashedPassword;
-    user.passwordChangedAt = new Date(); // utilisez le même nom que dans le modèle
-    await user.save();
-
-    // Réponse sans le mot de passe
-    const userResponse = user.toObject();
-    delete userResponse.password;
-
-    res.status(200).json({
-      message: "Mot de passe mis à jour avec succès",
-      user: userResponse
-    });
-
+    if (!validateObjectId(id, res)) return;
+    const updatedUser = await UserService.resetPassword(req.user.id, id, currentPassword, newPassword);
+    res.status(200).json({ message: "Password updated", user: updatedUser });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Erreur serveur", error: error.message });
-  }
-};
-
-exports.resetUser = async (req, res) =>{
-  try{
-    const {id} = req.params; 
-    //verifies if it's anything but a number
-    if (!mongoose.isValidObjectId(id)) {  
-     return res.status(400).json({ message: "Invalid ID format / Bad Request " });
-    }
-
-    //checks for empty fields
-    if (!userName || !email || !password || !role ) {
-    return  res.status(400).json({ error: "Missing required fields" });
-}
-
-    //update the thing
-    const updatedUser= await User.findByIdAndUpdate(
-        id,
-        {userName, email, password, role}, 
-        { new: true, runValidators: true } )
-
-    if(!updatedUser){return res.status(404).json({message: "User not found"})}
-  //response message
-    return res.status(200).json({
-    message: "User reset successfully!",
-    data: updatedUser
-  });
-
-  }
-
-  catch(error){
-    
-    console.error(error);
-    res.status(500).json({message: 'Server Error', error: error})
-   }
-};
-
-exports.getAllByRole = async(req, res) =>{
-  try{
-    const {role} = req.params;
-    if(!['admin','user'].includes(role)){return res.status(400).json({ error : "Invalid Role"})}
-    const foundUser = await User.find({role: role})
-
-    
-    if(foundUser.length===0){return res.status(404).json({message: "No user with this role found"});}
-   
-    return res.status(200).json({
-      message: "User Found",
-      Users: foundUser
-    })
-  }
-  catch(error){
-  console.error(error); 
-  return res.status(500).json({message: 'Server Error', error: error})
+    if (error.message === 'User not found') return res.status(404).json({ message: error.message });
+    if (error.message === 'Unauthorised operation') return res.status(403).json({ message: error.message });
+    if (error.message.includes('Password change limit')) return res.status(429).json({ message: error.message });
+    if (error.message === 'Current password incorrect') return res.status(401).json({ message: error.message });
+    handleError(res, error);
   }
 };
 
 exports.validateUser = async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({ message: "Invalid ID format / Bad Request" });
-    }
-
-    const user = await User.findById(id);
-    if (!user) {
-      return res.status(404).json({ message: "User Not Found" });
-    }
-
-    if (user.isAdminVerified) {
-      return res.status(400).json({ message: "User is already verified" });
-    }
-
-    // Update and save
-    user.isAdminVerified = true;
-    await user.save(); 
-    return res.status(200).json({ message: "User is Validated", user });
+    if (!validateObjectId(id, res)) return;
+    const user = await UserService.validateUser(req.user.id, id);
+    res.status(200).json({ message: "User is Validated", user });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server Error", error });
+    if (error.message === 'User not found') return res.status(404).json({ message: error.message });
+    if (error.message === 'Unauthorised operation') return res.status(403).json({ message: error.message });
+    if (error.message === 'User already verified') return res.status(400).json({ message: error.message });
+    handleError(res, error);
   }
 };
 
+exports.getAllByRole = async (req, res) => {
+  try {
+    const { role } = req.params;
+    const users = await UserService.getUsersByRole(req.user.id, role);
+    res.status(200).json({ message: "Users Found", Users: users });
+  } catch (error) {
+    if (error.message === 'Unauthorised') return res.status(403).json({ message: error.message });
+    if (error.message === 'Invalid role') return res.status(400).json({ message: error.message });
+    if (error.message === 'No users with this role') return res.status(404).json({ message: error.message });
+    handleError(res, error);
+  }
+};
 
 exports.getUserStats = async (req, res) => {
   try {
-    // Restrict to admin/super_admin (or use your permission service)
-    if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-      return res.status(403).json({ message: 'Accès non autorisé' });
-    }
-
-    // Total users
-    const totalUsers = await User.countDocuments();
-
-    // Users by role
-    const byRole = await User.aggregate([
-      { $group: { _id: '$role', count: { $sum: 1 } } },
-      { $sort: { _id: 1 } }
-    ]);
-
-    // Users by wilaya
-    const byWilaya = await User.aggregate([
-      { $match: { wilaya: { $ne: null } } },
-      { $group: { _id: '$wilaya', count: { $sum: 1 } } },
-      { $sort: { _id: 1 } }
-    ]);
-
-    // Users by profession
-    const byProfession = await User.aggregate([
-      { $match: { profession: { $ne: null } } },
-      { $group: { _id: '$profession', count: { $sum: 1 } } },
-      { $sort: { count: -1 } }
-    ]);
-
-    // Users by verification status
-    const byVerification = await User.aggregate([
-      {
-        $group: {
-          _id: null,
-          verified: { $sum: { $cond: ['$isVerified', 1, 0] } },
-          notVerified: { $sum: { $cond: ['$isVerified', 0, 1] } },
-          adminVerified: { $sum: { $cond: ['$isAdminVerified', 1, 0] } },
-          notAdminVerified: { $sum: { $cond: ['$isAdminVerified', 0, 1] } }
-        }
-      }
-    ]);
-
-    // Users by account status
-    const byStatus = await User.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 } } }
-    ]);
-
-    // New users in last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const newUsers = await User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
-
-    // Gender distribution (if field exists)
-    const bySexe = await User.aggregate([
-      { $match: { Sexe: { $ne: null } } },
-      { $group: { _id: '$Sexe', count: { $sum: 1 } } }
-    ]);
-
-    res.json({
-      success: true,
-      totalUsers,
-      byRole,
-      byWilaya,
-      byProfession,
-      byVerification: byVerification[0] || { verified: 0, notVerified: 0, adminVerified: 0, notAdminVerified: 0 },
-      byStatus,
-      newUsers,
-      bySexe
-    });
+    const stats = await UserService.getUserStats(req.user.id);
+    res.json({ success: true, ...stats });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+    if (error.message === 'Unauthorised') return res.status(403).json({ message: error.message });
+    handleError(res, error);
   }
 };
+

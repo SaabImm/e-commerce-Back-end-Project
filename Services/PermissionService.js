@@ -237,16 +237,16 @@ class PermissionService {
 
   // Rollback to previous non‑flawed version
   async rollback(model, userId, options = {}) {
-    // Find the currently active version for this model
-    const activeVersion = await PermissionSchema.findOne({ model, isActive: true }).sort({ version: -1 });
-    if (!activeVersion) throw new Error('No active version found');
-    const docId = activeVersion._id; // ID of the active version document
-    return await VersioningService.rollback(PermissionSchema, docId, userId, options);
+    const familyFilter = { model };
+    return await VersioningService.rollback(PermissionSchema, familyFilter, userId, options);
   }
 
   // Reactivate a specific version (by ID)
   async reactivateVersion(versionId, userId, options = {}) {
-    return await VersioningService.reactivateVersion(PermissionSchema, versionId, userId, options);
+    const version = await PermissionSchema.findById(versionId);
+    if (!version) throw new Error('Version not found');
+    const familyFilter = { model: version.model, tenantId: version.tenantId };
+    return await VersioningService.reactivateVersion(PermissionSchema, familyFilter, versionId, userId, options);
   }
 
   async initializeDefaultSchemas(createdBy, model, schemaDefinition) {

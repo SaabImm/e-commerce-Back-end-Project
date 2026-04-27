@@ -5,6 +5,8 @@ const User = require('../Models/UsersModels');
 const VersioningService = require('./VersioningService');
 const PermissionService = require('./PermissionService')
 const { sendEmail } = require('../Middleware/sendEmail');
+const mongoose = require('mongoose');
+
 
 class ValidationService {
   // ===================== PRIVATE HELPERS =====================
@@ -203,35 +205,58 @@ class ValidationService {
     return await ValidationSchema.findOne(filter).sort({ version: -1 });
   }
 
-  async getAllActiveSchemas(tenantId = null, targetType = null) {
-    const filter = { isActive: true };
+  async getAllValidationSchemas(targetType = null, includeInactive = false, tenantId = null) {
+    const filter = {};
     if (tenantId) filter.tenantId = tenantId;
     if (targetType) filter.targetType = targetType;
-    return await ValidationSchema.find(filter).sort({ targetType: 1, name: 1 });
+    if (!includeInactive) filter.isActive = true;
+    return await ValidationSchema.find(filter).sort({ targetType: 1, name: 1, version: -1 });
   }
 
   async rollbackValidationSchema(schemaId, userId, options = {}) {
     const schema = await ValidationSchema.findById(schemaId);
     if (!schema) throw new Error('Validation schema not found');
-    const baseId = schema._id;
-    return await VersioningService.rollback(ValidationSchema, baseId, userId, options);
+    const familyFilter = { targetType: schema.targetType, name: schema.name };
+    return await VersioningService.rollback(ValidationSchema, familyFilter, userId, options);
   }
 
   async reactivateValidationSchema(versionId, userId, options = {}) {
     const version = await ValidationSchema.findById(versionId);
     if (!version) throw new Error('Validation schema version not found');
-    const baseId = version._id;
-    return await VersioningService.reactivateVersion(ValidationSchema, baseId, versionId, userId, options);
+    const familyFilter = { targetType: version.targetType, name: version.name };
+    return await VersioningService.reactivateVersion(ValidationSchema, familyFilter, versionId, userId, options);
   }
 
   // ===================== REQUEST =====================
 
-  async createValidationRequest(targetId, targetType, schemaId, createdBy) {
-    const schema = await ValidationSchema.findById(schemaId);
+
+  async createValidationRequest(targetId, targetType, schemaIdentifier, createdBy) {
+    let schema;
+
+    // Check if schemaIdentifier is a valid ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(schemaIdentifier);
+    if (isValidObjectId) {
+      schema = await ValidationSchema.findById(schemaIdentifier);
+    } else {
+      // Treat as schema name – find latest active schema for this targetType
+      schema = await ValidationSchema.findOne({
+        targetType,
+        name: schemaIdentifier,
+        isActive: true
+      }).sort({ version: -1 });
+      if (!schema) {
+        // Fallback: any active schema for this targetType
+        schema = await ValidationSchema.findOne({
+          targetType,
+          isActive: true
+        }).sort({ version: -1 });
+      }
+    }
     if (!schema) throw new Error('Validation schema not found');
     if (!schema.isActive) throw new Error('Schema is not active');
 
-    const existing = await ValidationRequest.findOne({ targetId, targetType, validationSchemaId: schemaId });
+    // Check if a request already exists for this target and schema
+    const existing = await ValidationRequest.findOne({ targetId, targetType, validationSchemaId: schema._id });
     if (existing && ['pending', 'partial'].includes(existing.status)) {
       throw new Error('A validation request already exists for this target');
     }
@@ -257,7 +282,7 @@ class ValidationService {
     }));
 
     const request = new ValidationRequest({
-      validationSchemaId: schemaId,
+      validationSchemaId: schema._id,
       schemaVersion: schema.version,
       targetType,
       targetId,
