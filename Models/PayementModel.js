@@ -22,6 +22,8 @@ const paymentSchema = new mongoose.Schema({
     min: 0
   },
 
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
   type: {
     type: String,
     enum: ['cash', 'bank_transfer', 'check', 'online', 'credit', 'other'],

@@ -8,6 +8,7 @@ const creditTransactionSchema = new mongoose.Schema({
     enum: ['deposit', 'used_for_fee', 'excess_from_fee', 'versement', 'repayment'], 
     required: true 
   },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reversed: { type: Boolean, default: false },
   reference: { type: mongoose.Schema.Types.ObjectId, refPath: 'refModel' },
   refModel: { type: String, enum: ['Cotisation', 'Payment'] },

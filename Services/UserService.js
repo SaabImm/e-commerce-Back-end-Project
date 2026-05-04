@@ -39,8 +39,7 @@ class UserService {
   /**
    * Create a new user with auto‑created cotisations
    */
-
-    async createUser(viewerId, userData, plainPassword, validationSchemaName = 'Admin approval for new users') {
+  async createUser(viewerId, userData, plainPassword, validationSchemaName = 'Admin approval for new users') {
     if (!plainPassword) throw new Error('Password required');
 
     // Permission check
@@ -57,12 +56,12 @@ class UserService {
 
     // Duplicate checks
     if (filteredData.email) {
-        const existing = await User.findOne({ email: filteredData.email });
-        if (existing) throw new Error('Email already exists');
+      const existing = await User.findOne({ email: filteredData.email });
+      if (existing) throw new Error('Email already exists');
     }
     if (filteredData.registrationNumber) {
-        const existing = await User.findOne({ registrationNumber: filteredData.registrationNumber });
-        if (existing) throw new Error('Registration Number already exists');
+      const existing = await User.findOne({ registrationNumber: filteredData.registrationNumber });
+      if (existing) throw new Error('Registration Number already exists');
     }
 
     filteredData.createdBy = viewerId;
@@ -72,19 +71,20 @@ class UserService {
     // Auto‑create cotisations
     const startYear = savedUser.startDate ? savedUser.startDate.getFullYear() : new Date().getFullYear();
     const currentYear = new Date().getFullYear();
+    
     const definitions = await FeeDefinition.find({
-        year: { $gte: startYear, $lte: currentYear },
-        isActive: true
+      year: { $gte: startYear, $lte: currentYear },
+      isActive: true
     }).sort({ year: 1, feeType: 1 });
 
     for (const def of definitions) {
-        const existing = await Cotisation.findOne({
+      const existing = await Cotisation.findOne({
         user: savedUser._id,
         year: def.year,
         feeType: def.feeType
-        });
-        if (existing) continue;
-        const cotisation = new Cotisation({
+      });
+      if (existing) continue;
+      const cotisation = new Cotisation({
         user: savedUser._id,
         feeDefinition: def._id,
         year: def.year,
@@ -95,26 +95,35 @@ class UserService {
         notes: `Cotisation automatique à la création du compte (${def.title})`,
         createdBy: viewerId,
         cancelled: false
-        });
-        await cotisation.save();
-        savedUser.fees = savedUser.fees || [];
-        savedUser.fees.push(cotisation._id);
+      });
+      await cotisation.save();
+      savedUser.fees = savedUser.fees || [];
+      savedUser.fees.push(cotisation._id);
     }
     await savedUser.save();
 
+    // Choose validation schema name based on the role being created
+    let finalSchemaName = validationSchemaName;
+    if (filteredData.role === 'admin') {
+      finalSchemaName = 'Validation des nouveaux Administrateurs';
+    } else if (filteredData.role === 'moderator') {
+      finalSchemaName = 'Validation des nouveaux Administrateurs';
+    }
+
+    // Create validation request
     try {
-        await ValidationService.createValidationRequest(
+      await ValidationService.createValidationRequest(
         savedUser._id,
         'User',
-        validationSchemaName,
+        finalSchemaName,
         viewerId
-        );
+      );
     } catch (err) {
-        console.error('Failed to create validation request for user:', err);
+      console.error('Failed to create validation request for user:', err);
     }
 
     return savedUser;
-    }
+  }
   /**
    * Update a user – only allowed fields, requires viewer's password confirmation
    */

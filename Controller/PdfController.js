@@ -39,7 +39,8 @@ exports.downloadPaymentReceipt = async (req, res) => {
     const cotisation = await Cotisation.findById(payment.cotisation);
     const user = await User.findById(payment.user).select('name lastname email');
 
-    const pdfStream = PDFService.generatePaymentReceipt(payment, cotisation, user);
+    const createdByUser = payment.createdBy ? await User.findById(payment.createdBy).select('name lastname email') : null;
+    const pdfStream = PDFService.generatePaymentReceipt(payment, cotisation, user, createdByUser);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
@@ -74,7 +75,8 @@ exports.downloadVersementReceipt = async (req, res) => {
     if (!canPerform) return res.status(403).json({ error: 'Accès non autorisé' });
 
     const user = await User.findById(transaction.user).select('name lastname email');
-    const pdfStream = PDFService.generateVersementReceipt(transaction, user);
+    const createdByUser = transaction.createdBy ? await User.findById(transaction.createdBy).select('name lastname email') : null;
+    const pdfStream = PDFService.generateVersementReceipt(transaction, user, createdByUser);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
@@ -111,7 +113,8 @@ exports.emailPaymentReceipt = async (req, res) => {
     const user = await User.findById(payment.user).select('name lastname email');
 
     // Generate PDF stream and convert to buffer
-    const pdfStream = PDFService.generatePaymentReceipt(payment, cotisation, user);
+    const createdByUser = payment.createdBy ? await User.findById(payment.createdBy).select('name lastname email') : null;
+    const pdfStream = PDFService.generatePaymentReceipt(payment, cotisation, user, createdByUser);
     const pdfBuffer = await streamToBuffer(pdfStream);
 
     // Send email
@@ -160,7 +163,8 @@ exports.emailVersementReceipt = async (req, res) => {
     if (!canEmail) return res.status(403).json({ error: 'Accès non autorisé' });
 
     const user = await User.findById(transaction.user).select('name lastname email');
-    const pdfStream = PDFService.generateVersementReceipt(transaction, user);
+    const createdByUser = transaction.createdBy ? await User.findById(transaction.createdBy).select('name lastname email') : null;
+    const pdfStream = PDFService.generateVersementReceipt(transaction, user, createdByUser);
     const pdfBuffer = await streamToBuffer(pdfStream);
 
     await sendEmail({

@@ -19,6 +19,7 @@ router.patch('/requests/:requestId/approve/:stepOrder', authenticate, validation
 router.patch('/requests/:requestId/reject/:stepOrder', authenticate, validationController.rejectStep);
 router.get('/requests/approver', authenticate, validationController.getRequestsForApprover);
 router.get('/request/:id', authenticate, validationController.getValidationRequest);
+router.get('/requests/all', authenticate, validationController.getAllValidationRequests);
 router.get('/requests/user/:userId', authenticate, validationController.getUserValidationRequests);
 router.patch('/requests/:id/cancel', authenticate, validationController.cancelValidationRequest);
 router.patch('/requests/:requestId/skip/:stepOrder', authenticate, validationController.skipStep);

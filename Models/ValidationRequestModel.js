@@ -19,10 +19,26 @@ const validationRequestStepSchema = new mongoose.Schema({
       'skip_step',
       'notify_only',
       'wait_for_another',
-      'cancel_request'
+      'cancel_request',
+      'go_back'  
     ],
     default: 'reject_request'
   },
+  approveConditions: {
+    type: [{
+      type: { type: String, enum: [
+        'file_exists', 
+        'file_missing', 
+        'field_equals', 
+        'field_exists', 
+        'payment_status', 
+        'debt_zero'
+      ], 
+      required: true },
+      params: { type: mongoose.Schema.Types.Mixed, default: {} },
+    }],
+      default: []
+    },
   escalateToRole: { type: String, enum: ['user', 'moderator', 'admin', 'super_admin'], default: 'super_admin' },
   skipToStepOrder: { type: Number, default: null },
   customRejectAction: String,

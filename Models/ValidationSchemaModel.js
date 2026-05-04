@@ -1,4 +1,3 @@
-// models/ValidationSchema.js
 const mongoose = require('mongoose');
 
 const validationStepDefinitionSchema = new mongoose.Schema({
@@ -23,17 +22,23 @@ const validationStepDefinitionSchema = new mongoose.Schema({
   rejectAction: {
     type: String,
     enum: [
-      'reject_request',   // default – stop and mark request rejected
-      'escalate',         // escalate to a higher role (reset timer)
-      'skip_step',        // skip this step, continue with next step
-      'notify_only',      // send notification but keep step pending
-      'wait_for_another', // add a new step for secondary approval
-      'cancel_request'    //stop and cancel the request 
+      'reject_request', 'escalate', 'skip_step', 'notify_only',
+      'wait_for_another', 'cancel_request', 'go_back'
     ],
     default: 'reject_request'
   },
+  approveConditions: {
+    type: [{
+      type: { type: String, enum: [
+        'file_exists', 'file_missing', 'field_equals', 'field_exists',
+        'payment_status', 'debt_zero'
+      ], required: true },
+      params: { type: mongoose.Schema.Types.Mixed, default: {} },
+    }],
+    default: []
+  },
   escalateToRole: { type: String, enum: ['user', 'moderator', 'admin', 'super_admin'], default: 'super_admin' },
-  skipToStepOrder: { type: Number, default: null }, 
+  skipToStepOrder: { type: Number, default: null },
   customRejectAction: String,
   description: String,
 }, { _id: false });
@@ -51,13 +56,20 @@ const validationSchema = new mongoose.Schema({
     duration: { type: Number, default: 0 },
     action: { type: String, enum: ['reject', 'cancel'], default: 'reject' }
   },
-globalRejectAction: {
-  type: String,
-  enum: ['reject_request', 'escalate', 'skip_step', 'notify_only', 'wait_for_another'],
-  default: 'reject_request'
-},
-globalEscalateToRole: { type: String, enum: ['user', 'moderator', 'admin', 'super_admin'] },
-globalSkipToStepOrder: { type: Number, default: null },
+  onApproval: {
+    type: {
+      action: { type: String, enum: ['setField', 'callService', 'sendEmail'], default: 'setField' },
+      params: { type: mongoose.Schema.Types.Mixed, default: {} }
+    },
+    default: {}
+  },
+  onRejection: {
+    type: {
+      action: { type: String, enum: ['setField', 'callService', 'sendEmail'], default: 'setField' },
+      params: { type: mongoose.Schema.Types.Mixed, default: {} }
+    },
+    default: {}
+  },
   notificationConfig: {
     methods: {
       email: { type: Boolean, default: true },

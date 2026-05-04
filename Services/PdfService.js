@@ -2,20 +2,19 @@ const PDFDocument = require('pdfkit');
 const { PassThrough } = require('stream');
 
 class PDFService {
-  generatePaymentReceipt(payment, cotisation, user) {
+  generatePaymentReceipt(payment, cotisation, user, createdByUser) {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const stream = new PassThrough();
     doc.pipe(stream);
 
-    // Header
     doc.fontSize(20).text('Gest Org', { align: 'center' });
     doc.moveDown(0.5);
     doc.fontSize(10).text('Reçu de paiement', { align: 'center' });
     doc.moveDown();
 
-    // Receipt details
+    // Receipt details with time
     doc.fontSize(12).text(`N° reçu : ${payment._id}`);
-    doc.text(`Date : ${new Date(payment.date).toLocaleDateString('fr-FR')}`);
+    doc.text(`Date : ${new Date(payment.date).toLocaleString('fr-FR')}`);
     doc.moveDown();
 
     // Member info
@@ -24,7 +23,15 @@ class PDFService {
     doc.text(`Email : ${user?.email || 'Non renseigné'}`);
     doc.moveDown();
 
-    // Fee info (with null checks)
+    // Who made the payment
+    if (createdByUser) {
+      doc.fontSize(12).text(`Payé par : ${createdByUser.name} ${createdByUser.lastname} ${createdByUser.email}`);
+    } else if (payment.createdBy) {
+      doc.fontSize(12).text(`Payé par : Système`);
+    }
+    doc.moveDown();
+
+    // Fee info
     doc.fontSize(14).text('Cotisation', { underline: true });
     const feeType = cotisation?.feeType || 'inconnu';
     const year = cotisation?.year || 'N/A';
@@ -40,7 +47,6 @@ class PDFService {
       doc.text(`Notes : ${payment.notes}`);
     }
 
-    // Add cancellation notice if reversed
     if (payment.reversed) {
       doc.moveDown();
       doc.fontSize(14).fillColor('red').text(' CE PAIEMENT A ÉTÉ ANNULÉ / REMBOURSÉ ', { align: 'center' });
@@ -48,16 +54,13 @@ class PDFService {
     }
 
     doc.moveDown();
-
-    // Footer
     doc.fontSize(10).text('Merci pour votre règlement.', { align: 'center' });
     doc.text('Ce reçu est généré automatiquement, sans signature.', { align: 'center' });
-
     doc.end();
     return stream;
   }
 
-  generateVersementReceipt(transaction, user) {
+  generateVersementReceipt(transaction, user, createdByUser) {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const stream = new PassThrough();
     doc.pipe(stream);
@@ -68,12 +71,19 @@ class PDFService {
     doc.moveDown();
 
     doc.fontSize(12).text(`N° opération : ${transaction?._id || 'N/A'}`);
-    doc.text(`Date : ${transaction?.date ? new Date(transaction.date).toLocaleDateString('fr-FR') : 'N/A'}`);
+    doc.text(`Date : ${transaction?.date ? new Date(transaction.date).toLocaleString('fr-FR') : 'N/A'}`);
     doc.moveDown();
 
     doc.fontSize(14).text('Membre', { underline: true });
     doc.fontSize(12).text(`${user?.name || 'Inconnu'} ${user?.lastname || ''}`);
     doc.text(`Email : ${user?.email || 'Non renseigné'}`);
+    doc.moveDown();
+
+    if (createdByUser) {
+      doc.fontSize(12).text(`Effectué par : ${createdByUser.name} ${createdByUser.lastname} ${createdByUser.email}`);
+    } else if (transaction.createdBy) {
+      doc.fontSize(12).text(`Effectué par : Système`);
+    }
     doc.moveDown();
 
     doc.fontSize(14).text('Détails du versement', { underline: true });
@@ -86,11 +96,10 @@ class PDFService {
     }
     if (transaction?.reversed) {
       doc.moveDown();
-      doc.fontSize(14).fillColor('red').text('⚠️ CETTE TRANSACTION A ÉTÉ ANNULÉE ⚠️', { align: 'center' });
+      doc.fontSize(14).fillColor('red').text('CETTE TRANSACTION A ÉTÉ ANNULÉE', { align: 'center' });
       doc.fillColor('black');
     }
     doc.moveDown();
-
     doc.fontSize(10).text('Merci pour votre confiance.', { align: 'center' });
     doc.end();
     return stream;

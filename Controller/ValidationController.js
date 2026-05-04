@@ -7,15 +7,14 @@ const PermissionService = require('../Services/PermissionService');
 
 exports.createValidationSchema = async (req, res) => {
   try {
-    const { targetType, name, description, steps, globalTimeout } = req.body;
+    const { targetType, name, description, steps, globalTimeout, onApproval, onRejection } = req.body;
     const createdBy = req.user._id;
 
     if (!targetType || !name || !steps) {
       return res.status(400).json({ error: 'targetType, name, and steps are required' });
     }
-
     const schema = await ValidationService.createValidationSchema(
-      { targetType, name, description, steps, globalTimeout },
+      { targetType, name, description, steps, globalTimeout, onApproval, onRejection },
       createdBy
     );
     res.status(201).json(schema);
@@ -39,7 +38,8 @@ exports.updateValidationSchema = async (req, res) => {
 exports.getAllValidationSchemas = async (req, res) => {
   try {
     const { targetType, includeInactive = false } = req.query;
-    const schemas = await ValidationService.getAllValidationSchemas(targetType, includeInactive === 'true');
+    const userId= req.user._id
+    const schemas = await ValidationService.getAllValidationSchemas(userId, targetType, includeInactive === 'true');
     res.json({ schemas });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -97,7 +97,7 @@ exports.rollbackValidationSchema = async (req, res) => {
 };
 
 exports.reactivateValidationSchema = async (req, res) => {
-  try {
+  try { 
     const { id } = req.params; // versionId (the specific version document ID)
     const userId = req.user._id;
     const { newStatus = 'active', deactivateStatus = 'archived', reason } = req.query;
@@ -118,7 +118,9 @@ exports.reactivateValidationSchema = async (req, res) => {
     console.error(error);
     res.status(500).json({ error: error.message });
   }
-};
+}; 
+
+
 
 // ===================== REQUEST CONTROLLERS =====================
 
@@ -267,3 +269,21 @@ exports.forceExpirationCheck = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.getAllValidationRequests = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+    if (status && status !== 'all') filter.status = status;
+
+    const requests = await ValidationRequest.find(filter)
+      .populate('createdBy', 'name lastname email')
+      .populate('targetId'); // polymorphic, works with refPath
+
+    res.json({ requests });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+

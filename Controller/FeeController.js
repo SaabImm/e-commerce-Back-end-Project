@@ -154,7 +154,7 @@ exports.payCotisation = async (req, res) => {
       'Fee'
     );
     if (!canPay) return res.status(403).json({ message: "Vous n'avez pas le droit d'effectuer un paiement" });
-    const result = await FeeService.payCotisation({ feeId: cotisationId, ...req.body });
+    const result = await FeeService.payCotisation({ feeId: cotisationId, ...req.body, viewerId: req.user._id });
     res.json(result);
   } catch (error) {
     handleError(res, error);
@@ -164,6 +164,7 @@ exports.payCotisation = async (req, res) => {
 exports.cancelCotisation = async (req, res) => {
   try {
     const cotisationId = req.params.id;
+
     const targetUserId = await getCotisationUserId(cotisationId);
     const canCancel = await PermissionService.canPerform(
       req.user._id,
@@ -172,7 +173,7 @@ exports.cancelCotisation = async (req, res) => {
       'Fee'
     );
     if (!canCancel) return res.status(403).json({ message: "Vous n'avez pas le droit d'annuler cette cotisation" });
-    const result = await FeeService.cancelFee(cotisationId);
+    const result = await FeeService.cancelFee(cotisationId, req.user._id);
     res.json(result);
   } catch (error) {
     handleError(res, error);
@@ -267,8 +268,9 @@ exports.getStats = async (req, res) => {
 exports.versement = async (req, res) => {
   try {
     const { userId, amount, paymentMethod, notes } = req.body;
+    const id = req.user._id || req.user.id
     const canVersement = await PermissionService.canPerform(
-      req.user._id,
+      id,
       userId,
       'create',
       'Payement'
@@ -277,9 +279,9 @@ exports.versement = async (req, res) => {
     if (amount === 0) throw new Error('Le montant doit être différent de zéro');
     let result;
     if (amount > 0) {
-      result = await FeeService.applyVersement(userId, amount, paymentMethod, notes);
+      result = await FeeService.applyVersement(userId, amount, paymentMethod, notes, id);
     } else {
-      result = await FeeService.applyRepayment(userId, amount, notes);
+      result = await FeeService.applyRepayment(userId, amount, notes, id);
     }
     res.json(result);
   } catch (error) {
