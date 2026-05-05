@@ -63,7 +63,7 @@ exports.getSchemaVersions = async (req, res) => {
 
 exports.getValidationSchemaById = async (req, res) => {
   try {
-    const schema = await ValidationSchema.findById(req.params.id);
+    const schema = await ValidationSchema.findById(req.params.id).populate('createdBy', 'name lastname').populate('updatedBy' , 'name lastname');
     if (!schema) return res.status(404).json({ error: 'Schema not found' });
     res.json(schema);
   } catch (error) {

@@ -6,6 +6,7 @@ const validationRequestStepSchema = new mongoose.Schema({
   allowedUserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
   order: { type: Number, required: true },
   required: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false },
   timeout: {
     duration: { type: Number, default: 0 },
     action: { type: String, enum: ['reject_step', 'cancel_request', 'escalate'], default: 'reject_step' },

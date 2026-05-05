@@ -1,3 +1,4 @@
+// services/ValidationService.js
 const ValidationSchema = require('../Models/ValidationSchemaModel');
 const ValidationRequest = require('../Models/ValidationRequestModel');
 const User = require('../Models/UsersModels');
@@ -33,13 +34,16 @@ class ValidationService {
     return { request, step, stepIndex, user };
   }
 
+  // Simplified permission check: only allowedUserIds (the list is pre‑computed from role)
   async _checkPermission(request, step, user) {
-    if (user.role !== step.requiredRole) return false;
-    if (step.allowedUserIds && step.allowedUserIds.length > 0) {
-      const isAllowed = step.allowedUserIds.some(id => id.toString() === user._id.toString());
-      if (!isAllowed) return false;
-    }
-    return true;
+    if (!step.allowedUserIds || step.allowedUserIds.length === 0) return false;
+    return step.allowedUserIds.some(id => id.toString() === user._id.toString());
+  }
+
+  // ===================== USER LIST HELPER =====================
+  async _getAllUserIdsForRole(role) {
+    const users = await User.find({ role }).distinct('_id');
+    return users.map(id => id.toString());
   }
 
   // ===================== CONDITION HELPERS =====================
@@ -139,16 +143,19 @@ class ValidationService {
     }
     request.status = 'partial';
     await request.save();
-    await this.notifyNextApprovers(request);
+    // await this.notifyNextApprovers(request);
     return 'partial';
   }
 
   async _escalateStep(request, step, newRole, reason, userId) {
     step.requiredRole = newRole;
+
+      
+    step.allowedUserIds = await this._getAllUserIdsForRole(newRole);
     step.pendingSince = new Date();
     step.status = 'pending';
+    step.isActive = true,
     step.rejectAction = 'reject_request';
-    step.allowedUserIds = [];
     step.comments = (reason ? reason + '; ' : '') + `Escalated to ${newRole}`;
     await request.save();
     await this._reEvaluateRequestStatus(request);
@@ -159,6 +166,7 @@ class ValidationService {
 
     switch (action) {
       case 'reject_request':
+        step.isActive = false;
         request.status = 'rejected';
         await request.save();
         await this.finalizeValidation(request, 'rejected');
@@ -176,7 +184,7 @@ class ValidationService {
         step.status = 'pending';
         step.comments = (reason ? reason + '; ' : '') + 'Rejection noted, step remains pending';
         await request.save();
-        await this.notifyRejectionOnly(request, step, userId);
+        // await this.notifyRejectionOnly(request, step, userId);
         break;
 
       case 'wait_for_another':
@@ -203,16 +211,19 @@ class ValidationService {
           pendingSince: new Date(),
           comments: `Created after rejection by ${user?.name || 'system'}`,
           rejectAction: 'reject_request',
-          required: true
+          required: true,
+          approveConditions: step.approveConditions || []
         };
         request.steps.push(newStep);
         request.steps.sort((a, b) => a.order - b.order);
+        step.isActive = false;
         step.status = 'skipped';
         await request.save();
         await this._reEvaluateRequestStatus(request);
         break;
 
       case 'reject_step':
+        step.isActive = false;
         step.status = 'expired';
         step.approvedAt = new Date();
         step.comments = reason || step.comments;
@@ -221,6 +232,7 @@ class ValidationService {
         break;
 
       case 'cancel_request':
+        step.isActive = false;
         request.status = 'cancelled';
         request.cancelledAt = new Date();
         request.cancelledBy = userId || null;
@@ -240,13 +252,15 @@ class ValidationService {
         }
         previousStep.status = 'pending';
         previousStep.pendingSince = new Date();
+        previousStep.isActive = true;
         previousStep.comments = (previousStep.comments ? previousStep.comments + '; ' : '') +
           `Réouvert par rejet de l'étape ${step.order}`;
+        step.isActive = false;
         step.status = 'pending';
         step.comments = (reason ? reason + '; ' : '') + 'Action de retour déclenchée';
         request.status = 'partial';
         await request.save();
-        await this.notifyNextApprovers(request);
+        // await this.notifyNextApprovers(request);
         break;
 
       default:
@@ -255,15 +269,6 @@ class ValidationService {
   }
 
   // ===================== SCHEMA =====================
-  async createValidationSchema(data, createdBy) {
-      // Operation permission: create on ValidationSchema
-      const canCreate = await PermissionService.canPerform(createdBy, null, 'create', 'Validation');
-      if (!canCreate) throw new Error('Unauthorised to create validation schemas');
-
-      const filter = { targetType: data.targetType, name: data.name, tenantId: data.tenantId || null };
-      return await VersioningService.initializeFirstVersion(ValidationSchema, filter, { ...data, status: 'active' }, createdBy);
-  }
-
   async createValidationSchema(data, createdBy) {
     const canCreate = await PermissionService.canPerform(createdBy, null, 'create', 'Validation');
     if (!canCreate) throw new Error('Unauthorised to create validation schemas');
@@ -313,8 +318,8 @@ class ValidationService {
     return await VersioningService.updateInactiveVersion(ValidationSchema, schemaId, filteredUpdates, userId, reason);
   }
 
-  async getActiveSchema(targetType, tenantId = null, name = null) {
-    const canRead = await PermissionService.canPerform(null, null, 'read', 'Validation');
+  async getActiveSchema(userId, targetType, tenantId = null, name = null) {
+    const canRead = await PermissionService.canPerform(userId, null, 'read', 'Validation');
     if (!canRead) throw new Error('Unauthorised to read validation schemas');
     const filter = { targetType, isActive: true };
     if (tenantId) filter.tenantId = tenantId;
@@ -369,26 +374,35 @@ class ValidationService {
       throw new Error('A validation request already exists for this target');
     }
 
-    const steps = schema.steps.map(step => ({
-      stepName: step.stepName,
-      requiredRole: step.requiredRole,
-      allowedUserIds: step.allowedUserIds || [],
-      order: step.order,
-      required: step.required !== false,
-      timeout: step.timeout ? {
-        duration: step.timeout.duration || 0,
-        action: step.timeout.action || 'reject_request',
-        escalateToRole: step.timeout.escalateToRole || 'admin'
-      } : { duration: 0, action: 'reject_request', escalateToRole: 'admin' },
-      rejectAction: step.rejectAction || 'reject_request',
-      escalateToRole: step.escalateToRole || 'admin',
-      approveConditions: step.approveConditions || [],
-      skipToStepOrder: step.skipToStepOrder || null,
-      customRejectAction: step.customRejectAction || null,
-      description: step.description || '',
-      pendingSince: new Date(),
-      status: 'pending'
-    }));
+    const steps = [];
+    for (let i = 0; i < schema.steps.length; i++) {
+      const stepDef = schema.steps[i];
+      let allowedUserIds = stepDef.allowedUserIds || [];
+      if (allowedUserIds.length === 0) {
+        allowedUserIds = await this._getAllUserIdsForRole(stepDef.requiredRole);
+      }
+      steps.push({
+        stepName: stepDef.stepName,
+        requiredRole: stepDef.requiredRole,
+        allowedUserIds: allowedUserIds,
+        order: stepDef.order,
+        required: stepDef.required !== false,
+        timeout: stepDef.timeout ? {
+          duration: stepDef.timeout.duration || 0,
+          action: stepDef.timeout.action || 'reject_request',
+          escalateToRole: stepDef.timeout.escalateToRole || 'admin'
+        } : { duration: 0, action: 'reject_request', escalateToRole: 'admin' },
+        rejectAction: stepDef.rejectAction || 'reject_request',
+        escalateToRole: stepDef.escalateToRole || 'admin',
+        approveConditions: stepDef.approveConditions || [],
+        skipToStepOrder: stepDef.skipToStepOrder || null,
+        customRejectAction: stepDef.customRejectAction || null,
+        description: stepDef.description || '',
+        pendingSince: new Date(),
+        status: 'pending',
+        isActive: i === 0
+      });
+    }
 
     const request = new ValidationRequest({
       validationSchemaId: schema._id,
@@ -403,7 +417,7 @@ class ValidationService {
     });
 
     if (schema.globalTimeout && schema.globalTimeout.duration > 0) {
-      request.expiresAt = new Date(Date.now() + schema.globalTimeout.duration * 1000); // seconds
+      request.expiresAt = new Date(Date.now() + schema.globalTimeout.duration * 1000);
     }
     await request.save();
     // await this.notifyNextApprovers(request, schema);
@@ -412,8 +426,9 @@ class ValidationService {
 
   async approveStep(requestId, stepOrder, userId, comments = '') {
     const { request, step, user } = await this._getRequestAndStep(requestId, stepOrder, userId, true);
-    const isAuthorized = await this._checkPermission(request, step, user);
-    if (!isAuthorized) throw new Error('Unauthorised to approve this step');
+    if (!(step.allowedUserIds && step.allowedUserIds.some(id => id.toString() === user._id.toString()))) {
+      throw new Error('Unauthorised to approve this step');
+    }
 
     if (step.approveConditions && step.approveConditions.length > 0) {
       const { success, message } = await this._evaluateConditions(step.approveConditions, request.targetType, request.targetId);
@@ -421,10 +436,19 @@ class ValidationService {
     }
 
     step.status = 'approved';
+    step.isActive = false;
     step.approvedBy = userId;
     step.approvedAt = new Date();
     step.comments = comments;
     request.updatedAt = new Date();
+
+    const nextStep = request.steps
+      .filter(s => s.status === 'pending')
+      .sort((a, b) => a.order - b.order)[0];
+    if (nextStep) {
+      nextStep.isActive = true;
+    }
+
     await request.save();
     await this._reEvaluateRequestStatus(request);
     return request;
@@ -432,13 +456,15 @@ class ValidationService {
 
   async rejectStep(requestId, stepOrder, userId, reason = '') {
     const { request, step, user } = await this._getRequestAndStep(requestId, stepOrder, userId, true);
-    const isAuthorized = await this._checkPermission(request, step, user);
-    if (!isAuthorized) throw new Error('Unauthorised to reject this step');
+    if (!(step.allowedUserIds && step.allowedUserIds.some(id => id.toString() === user._id.toString()))) {
+      throw new Error('Unauthorised to reject this step');
+    }
 
     const action = step.rejectAction || 'reject_request';
     const escalateToRole = step.escalateToRole || 'admin';
 
     step.status = 'rejected';
+    step.isActive = false;
     step.approvedBy = userId;
     step.approvedAt = new Date();
     step.comments = reason;
@@ -449,14 +475,23 @@ class ValidationService {
 
   async skipStep(requestId, stepOrder, userId, reason = '') {
     const { request, step, user } = await this._getRequestAndStep(requestId, stepOrder, userId, true);
-    const isAuthorized = await this._checkPermission(request, step, user);
-    if (!isAuthorized) throw new Error('Unauthorised to skip this step');
+    if (!(step.allowedUserIds && step.allowedUserIds.some(id => id.toString() === user._id.toString()))) {
+      throw new Error('Unauthorised to skip this step');
+    }
     if (step.required) throw new Error('Cannot skip a required step.');
     step.status = 'skipped';
+    step.isActive = false;
     step.approvedBy = userId;
     step.approvedAt = new Date();
     step.comments = reason || 'Step skipped by admin';
     request.updatedAt = new Date();
+
+    const nextStep = request.steps
+      .filter(s => s.status === 'pending')
+      .sort((a, b) => a.order - b.order)[0];
+    if (nextStep) {
+      nextStep.isActive = true;
+    }
     await request.save();
     await this._reEvaluateRequestStatus(request);
     return request;
@@ -478,15 +513,15 @@ class ValidationService {
 
   // ===================== NOTIFICATIONS =====================
   async notifyNextApprovers(request, schema = null) {
-    const nextStep = request.steps.find(s => s.status === 'pending');
-    if (!nextStep) return;
+    const activeStep = request.steps.find(s => s.isActive === true);
+    if (!activeStep) return;
     if (!schema) schema = await ValidationSchema.findById(request.validationSchemaId);
     const notificationMethods = schema?.notificationConfig?.methods || { email: true, system: false };
     let usersToNotify = [];
-    if (nextStep.allowedUserIds && nextStep.allowedUserIds.length > 0) {
-      usersToNotify = await User.find({ _id: { $in: nextStep.allowedUserIds } });
+    if (activeStep.allowedUserIds && activeStep.allowedUserIds.length > 0) {
+      usersToNotify = await User.find({ _id: { $in: activeStep.allowedUserIds } });
     } else {
-      usersToNotify = await User.find({ role: nextStep.requiredRole });
+      usersToNotify = await User.find({ role: activeStep.requiredRole });
     }
     for (const user of usersToNotify) {
       if (notificationMethods.email) {
